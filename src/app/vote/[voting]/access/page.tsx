@@ -34,7 +34,7 @@ export default async function VoterAccessPage({ params }: { params: Params }) {
         <h1 className="mt-1 text-3xl font-black">Acceso votante</h1>
         <p className="mt-2 text-sm text-muted">
           {isPublic
-            ? "Esta votación es pública. Pulsa continuar para empezar."
+            ? `Ordena los QBs como prefieras y pulsa "Enviar Ranking". No es necesario que compartas la captura de pantalla con ${voting.name}, tu ranking quedará guardado automáticamente en la base de datos.`
             : "Introduce la contraseña para empezar a votar."}
         </p>
       </header>
