@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     throw err;
   }
 
-  if (!checkAdminPassword(data.password)) {
+  if (!checkAdminPassword(data.password.trim())) {
     return NextResponse.json({ error: "Contraseña incorrecta" }, { status: 401 });
   }
 
