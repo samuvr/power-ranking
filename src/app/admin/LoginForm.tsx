@@ -8,6 +8,7 @@ type Props = { nextPath?: string };
 export function LoginForm({ nextPath = "/admin" }: Props) {
   const router = useRouter();
   const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -19,7 +20,7 @@ export function LoginForm({ nextPath = "/admin" }: Props) {
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: password.trim() }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -36,15 +37,28 @@ export function LoginForm({ nextPath = "/admin" }: Props) {
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
-      <input
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-base outline-none focus:border-foreground"
-        placeholder="Contraseña"
-        autoComplete="current-password"
-        required
-      />
+      <div className="relative">
+        <input
+          type={show ? "text" : "password"}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full rounded-xl border border-border bg-surface px-4 py-3 pr-16 text-base outline-none focus:border-foreground"
+          placeholder="Contraseña"
+          autoComplete="current-password"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          required
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          className="absolute inset-y-0 right-0 px-4 text-sm text-muted hover:text-foreground"
+          aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"}
+        >
+          {show ? "Ocultar" : "Mostrar"}
+        </button>
+      </div>
       {error && (
         <p className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent">
           {error}
