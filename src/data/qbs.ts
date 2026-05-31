@@ -8,7 +8,7 @@ export type Qb = {
 // Editar libremente cuando se confirmen titulares definitivos.
 export const QBS: Qb[] = [
   { id: "jacoby-brisset", name: "Jacoby Brisset", teamAbbr: "ARI" },
-  { id: "penix-tua", name: "Penix Jr./Tua", teamAbbr: "ATL" },
+  { id: "penix-tua", name: "Michael Penix Jr.", teamAbbr: "ATL" },
   { id: "lamar-jackson", name: "Lamar Jackson", teamAbbr: "BAL" },
   { id: "josh-allen", name: "Josh Allen", teamAbbr: "BUF" },
   { id: "bryce-young", name: "Bryce Young", teamAbbr: "CAR" },
@@ -23,11 +23,11 @@ export const QBS: Qb[] = [
   { id: "daniel-jones", name: "Daniel Jones", teamAbbr: "IND" },
   { id: "trevor-lawrence", name: "Trevor Lawrence", teamAbbr: "JAX" },
   { id: "patrick-mahomes", name: "Patrick Mahomes", teamAbbr: "KC" },
-  { id: "mendoza-cousins", name: "Mendoza/Cousins", teamAbbr: "LV" },
+  { id: "mendoza-cousins", name: "Fernando Mendoza", teamAbbr: "LV" },
   { id: "justin-herbert", name: "Justin Herbert", teamAbbr: "LAC" },
   { id: "matthew-stafford", name: "Matthew Stafford", teamAbbr: "LAR" },
   { id: "malik-willis", name: "Malik Willis", teamAbbr: "MIA" },
-  { id: "mccarthy-murray", name: "McCarthy/Murray", teamAbbr: "MIN" },
+  { id: "mccarthy-murray", name: "J.J. McCarthy", teamAbbr: "MIN" },
   { id: "drake-maye", name: "Drake Maye", teamAbbr: "NE" },
   { id: "tyler-shough", name: "Tyler Shough", teamAbbr: "NO" },
   { id: "jaxson-dart", name: "Jaxson Dart", teamAbbr: "NYG" },
