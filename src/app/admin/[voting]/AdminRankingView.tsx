@@ -112,6 +112,8 @@ export function AdminRankingView({
         </button>
       </div>
 
+      <ExportActions slug={voting.slug} totalRounds={totalRounds} />
+
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -193,6 +195,96 @@ export function AdminRankingView({
           ))}
         </ul>
       </section>
+    </div>
+  );
+}
+
+function ExportActions({
+  slug,
+  totalRounds,
+}: {
+  slug: string;
+  totalRounds: number;
+}) {
+  const [exportingStory, setExportingStory] = useState(false);
+  const [exportingCarousel, setExportingCarousel] = useState(false);
+  const [carouselProgress, setCarouselProgress] = useState(0);
+
+  async function downloadBlob(url: string, filename: string) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function handleStory() {
+    setExportingStory(true);
+    try {
+      await downloadBlob(
+        `/api/admin/rankings/${slug}/story`,
+        `story-${slug}-ranking-global.png`,
+      );
+    } finally {
+      setExportingStory(false);
+    }
+  }
+
+  async function handleCarousel() {
+    setExportingCarousel(true);
+    setCarouselProgress(0);
+    try {
+      for (let i = 0; i < totalRounds; i++) {
+        await downloadBlob(
+          `/api/admin/rankings/${slug}/round/${i}`,
+          `carrusel-${slug}-fase-${i + 1}-de-${totalRounds}.png`,
+        );
+        setCarouselProgress(i + 1);
+        if (i < totalRounds - 1) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+    } finally {
+      setExportingCarousel(false);
+      setCarouselProgress(0);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <button
+        type="button"
+        onClick={handleStory}
+        disabled={exportingStory || exportingCarousel}
+        className="font-subhead flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-xs uppercase tracking-wide transition hover:border-foreground disabled:opacity-50"
+      >
+        {exportingStory ? (
+          <>
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Generando…
+          </>
+        ) : (
+          "Exportar Story"
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={handleCarousel}
+        disabled={exportingStory || exportingCarousel}
+        className="font-subhead flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-xs uppercase tracking-wide transition hover:border-foreground disabled:opacity-50"
+      >
+        {exportingCarousel ? (
+          <>
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            {carouselProgress}/{totalRounds} imágenes…
+          </>
+        ) : (
+          "Exportar Carrusel"
+        )}
+      </button>
     </div>
   );
 }
