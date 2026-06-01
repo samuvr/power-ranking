@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getRankingsByVoting, getVotingBySlug } from "@/lib/db/client";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
-import { computeDeviation } from "@/lib/ranking-deviation";
+import { computeDeviationLeaveOneOut } from "@/lib/ranking-deviation";
 import { getAllQbs } from "@/data/qbs";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { hasVotingAdminAccess } from "@/lib/voting-access";
@@ -86,8 +86,10 @@ export default async function AdminDashboardPage({
               fullName: r.full_name,
               email: r.email,
               updatedAt: r.updated_at,
-              meanDeviation: computeDeviation(r.positions, result.ranking)
-                .meanAbsDeviation,
+              meanDeviation: computeDeviationLeaveOneOut(
+                r.positions,
+                rows.filter((o) => o.id !== r.id).map((o) => o.positions),
+              ).meanAbsDeviation,
             }))
             .sort((a, b) => a.meanDeviation - b.meanDeviation)
             .map((v, idx) => ({ ...v, rankPosition: idx + 1 }))}
