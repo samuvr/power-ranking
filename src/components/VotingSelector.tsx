@@ -49,6 +49,9 @@ export function VotingSelector({ value, onChange, votings }: Props) {
                 alt={`Logo ${v.name}`}
                 fill
                 sizes="80px"
+                // Los logos los introduce el admin con URLs arbitrarias; evitamos
+                // el optimizador de Next para no depender de remotePatterns.
+                unoptimized
                 className="object-cover"
               />
             </div>
