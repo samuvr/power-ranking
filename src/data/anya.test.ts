@@ -14,8 +14,10 @@ describe("computeAnyaRanking", () => {
   it("asigna el puesto 1 al mayor ANY/A y el último al menor", () => {
     expect(ranking.get("lamar-jackson")).toEqual({ value: 7.93, rank: 1 });
     expect(ranking.get("brock-purdy")?.rank).toBe(2);
-    // 31 QBs con valor; Mendoza/Cousins es el menor (3.5).
-    expect(ranking.get("mendoza-cousins")?.rank).toBe(31);
+    // 30 QBs con valor; McCarthy/Murray es el menor (4.3).
+    expect(ranking.get("mccarthy-murray")?.rank).toBe(30);
+    // Mendoza/Cousins no tiene dato (null) y no recibe puesto.
+    expect(ranking.get("mendoza-cousins")?.rank).toBeNull();
   });
 
   it("usa competition ranking en los empates", () => {
