@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getRankingsByVoting, getVotingBySlug } from "@/lib/db/client";
-import { computeGlobalRanking } from "@/lib/ranking-algorithm";
-import { computeDeviation } from "@/lib/ranking-deviation";
+import { computeDeviationLeaveOneOut } from "@/lib/ranking-deviation";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { hasVotingAdminAccess } from "@/lib/voting-access";
 import { VoterRankingView } from "./VoterRankingView";
@@ -29,8 +28,10 @@ export default async function VoterRankingPage({
   const voterRow = rows.find((r) => r.id === voterId);
   if (!voterRow) notFound();
 
-  const result = computeGlobalRanking(rows.map((r) => r.positions));
-  const deviation = computeDeviation(voterRow.positions, result.ranking);
+  const deviation = computeDeviationLeaveOneOut(
+    voterRow.positions,
+    rows.filter((r) => r.id !== voterRow.id).map((r) => r.positions),
+  );
 
   const { voter_password_hash: _v, admin_password_hash: _a, ...publicVoting } = voting;
   void _v;

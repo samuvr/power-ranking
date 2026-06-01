@@ -6,9 +6,8 @@ import {
 } from "@/lib/db/client";
 import { getQbById } from "@/data/qbs";
 import { getTeamByAbbr, teamLogoUrl } from "@/data/teams";
-import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import {
-  computeDeviation,
+  computeDeviationLeaveOneOut,
   topOverratedUnderrated,
   type DeviationEntry,
 } from "@/lib/ranking-deviation";
@@ -112,8 +111,10 @@ export async function GET(req: Request, { params }: { params: Params }) {
   }
 
   const allRows = await getRankingsByVoting(ranking.voting);
-  const consensus = computeGlobalRanking(allRows.map((r) => r.positions));
-  const deviation = computeDeviation(ranking.positions, consensus.ranking);
+  const deviation = computeDeviationLeaveOneOut(
+    ranking.positions,
+    allRows.filter((r) => r.id !== ranking.id).map((r) => r.positions),
+  );
   const { overrated, underrated } = topOverratedUnderrated(deviation.perQb, 3);
   const diffByQb = new Map<string, number>();
   for (const e of deviation.perQb) diffByQb.set(e.qbId, e.diff);

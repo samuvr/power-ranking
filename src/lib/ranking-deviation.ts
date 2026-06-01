@@ -1,4 +1,5 @@
 import type { GlobalRankingEntry } from "./ranking-algorithm";
+import { computeGlobalRanking } from "./ranking-algorithm";
 
 export type DeviationEntry = {
   qbId: string;
@@ -38,6 +39,26 @@ export function computeDeviation(
     meanAbsDeviation: count === 0 ? 0 : totalAbs / count,
     perQb,
   };
+}
+
+/**
+ * Desviación "leave-one-out": compara el ranking de un votante contra el
+ * consenso calculado SIN su propio voto. Evita el sesgo de auto-comparación
+ * (un votante extremo arrastra el consenso hacia sí mismo y parecería menos
+ * desviado de lo que realmente es).
+ *
+ * `otherRankings` son todos los rankings EXCEPTO el del votante; el llamante
+ * se encarga de excluirlo. Si no hay otros votantes no existe un consenso
+ * ajeno contra el que comparar, así que el votante es el único y se compara
+ * consigo mismo (desviación 0).
+ */
+export function computeDeviationLeaveOneOut(
+  voterPositions: string[],
+  otherRankings: string[][],
+): DeviationResult {
+  const basis = otherRankings.length > 0 ? otherRankings : [voterPositions];
+  const consensus = computeGlobalRanking(basis);
+  return computeDeviation(voterPositions, consensus.ranking);
 }
 
 export function topOverratedUnderrated(
