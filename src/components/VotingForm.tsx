@@ -165,15 +165,15 @@ export function VotingForm(props: Props) {
         </Field>
       </div>
 
-      <Field label="URL del logo (externa)">
+      <Field label="URL del logo">
         <input
-          type="url"
+          type="text"
           value={logoUrl}
           onChange={(e) => setLogoUrl(e.target.value)}
           maxLength={500}
           required
           className={inputCls}
-          placeholder="https://example.com/logo.png"
+          placeholder="/logo.png o https://example.com/logo.png"
         />
       </Field>
 
