@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import type { VotingPublic } from "@/lib/db/client";
+import { VotingLogo } from "./VotingLogo";
 
 type Props = {
   value: string | null;
@@ -44,15 +44,11 @@ export function VotingSelector({ value, onChange, votings }: Props) {
               className="relative h-20 w-20 overflow-hidden rounded-full border-2"
               style={{ borderColor: v.accent, background: v.accent }}
             >
-              <Image
+              <VotingLogo
                 src={v.logo_url}
-                alt={`Logo ${v.name}`}
-                fill
-                sizes="80px"
-                // Los logos los introduce el admin con URLs arbitrarias; evitamos
-                // el optimizador de Next para no depender de remotePatterns.
-                unoptimized
-                className="object-cover"
+                name={v.name}
+                accent={v.accent}
+                fallbackTextClassName="text-2xl"
               />
             </div>
             <div>

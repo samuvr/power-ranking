@@ -6,6 +6,7 @@ import { getAllQbs, getQbById, TOTAL_QBS, type Qb } from "@/data/qbs";
 import type { VotingPublic } from "@/lib/db/client";
 import { QbCard } from "./QbCard";
 import { RankingSlot } from "./RankingSlot";
+import { VotingLogo } from "./VotingLogo";
 
 type Tab = "pool" | "ranking";
 
@@ -165,11 +166,10 @@ export function RankingBoard({ voting }: Props) {
               className="relative h-10 w-10 overflow-hidden rounded-full border-2"
               style={{ borderColor: votingMeta.accent }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <VotingLogo
                 src={votingMeta.logo_url}
-                alt={votingMeta.name}
-                className="h-full w-full object-cover"
+                name={votingMeta.name}
+                accent={votingMeta.accent}
               />
             </div>
             <div>
