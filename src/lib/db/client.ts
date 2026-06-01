@@ -163,6 +163,29 @@ export async function upsertRanking(input: {
   return { id: result.rows[0].id };
 }
 
+// Copia los rankings de una votación origen a otra destino. Aprovecha la
+// constraint UNIQUE (email, voting): los emails que ya tienen ranking en la
+// votación destino se saltan (ON CONFLICT DO NOTHING), sin sobrescribirse.
+export async function copyRankingsBetweenVotings(
+  sourceVoting: VotingId,
+  targetVoting: VotingId,
+): Promise<{ copied: number; total: number; skipped: number }> {
+  const total = await sql<{ count: string }>`
+    SELECT COUNT(*)::text AS count FROM rankings WHERE voting = ${sourceVoting}
+  `;
+  const inserted = await sql`
+    INSERT INTO rankings (full_name, email, voting, positions)
+    SELECT full_name, email, ${targetVoting}, positions
+    FROM rankings
+    WHERE voting = ${sourceVoting}
+    ON CONFLICT (email, voting) DO NOTHING
+    RETURNING id
+  `;
+  const totalN = parseInt(total.rows[0].count, 10);
+  const copied = inserted.rowCount ?? 0;
+  return { copied, total: totalN, skipped: totalN - copied };
+}
+
 export async function getRankingById(id: string): Promise<RankingRow | null> {
   const result = await sql<RankingRow>`
     SELECT id, full_name, email, voting, positions, created_at, updated_at

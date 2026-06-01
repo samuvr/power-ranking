@@ -15,6 +15,43 @@ export function VotingsManager({ initialVotings, counts }: Props) {
   const [votings, setVotings] = useState(initialVotings);
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // id de la votación origen cuyo panel de duplicación está abierto
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [target, setTarget] = useState<string>("");
+
+  const openDuplicate = (sourceId: string) => {
+    setError(null);
+    setNotice(null);
+    setTarget("");
+    setDuplicatingId((cur) => (cur === sourceId ? null : sourceId));
+  };
+
+  const duplicate = (sourceId: string) => {
+    if (!target) return;
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/admin/votings/${sourceId}/duplicate`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ targetVotingId: target }),
+        });
+        if (!res.ok) throw new Error(`Error ${res.status}`);
+        const data: { copied: number; skipped: number; total: number } =
+          await res.json();
+        setNotice(
+          `Copiados ${data.copied}, saltados ${data.skipped} de ${data.total} rankings.`,
+        );
+        setDuplicatingId(null);
+        setTarget("");
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error duplicando");
+      }
+    });
+  };
 
   const move = (idx: number, dir: -1 | 1) => {
     const j = idx + dir;
@@ -69,6 +106,11 @@ export function VotingsManager({ initialVotings, counts }: Props) {
       {error && (
         <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
           {error}
+        </p>
+      )}
+      {notice && (
+        <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+          {notice}
         </p>
       )}
       <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
@@ -137,7 +179,54 @@ export function VotingsManager({ initialVotings, counts }: Props) {
               >
                 {v.active ? "Desactivar" : "Activar"}
               </button>
+              <button
+                type="button"
+                onClick={() => openDuplicate(v.id)}
+                disabled={busy}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:border-muted disabled:opacity-50"
+              >
+                Duplicar rankings
+              </button>
             </div>
+            {duplicatingId === v.id && (
+              <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2">
+                <span className="text-xs text-muted">Copiar a:</span>
+                <select
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  disabled={busy}
+                  className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs"
+                >
+                  <option value="">Elige una votación…</option>
+                  {votings
+                    .filter((o) => o.id !== v.id)
+                    .map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => duplicate(v.id)}
+                  disabled={busy || !target}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:border-muted disabled:opacity-50"
+                >
+                  Copiar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDuplicatingId(null)}
+                  disabled={busy}
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <span className="text-[11px] text-muted">
+                  Los emails que ya votaron en el destino se conservan.
+                </span>
+              </div>
+            )}
           </li>
         ))}
       </ul>

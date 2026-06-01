@@ -64,6 +64,10 @@ export const VotingReorderSchema = z.object({
   orderedIds: z.array(z.guid()).min(1).max(64),
 });
 
+export const DuplicateRankingsSchema = z.object({
+  targetVotingId: z.guid(),
+});
+
 export const VotingAccessSchema = z.object({
   password: z.string().max(200).optional(),
 });
