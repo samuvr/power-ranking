@@ -45,7 +45,14 @@ export function VoterRankingView({ voting, voter, deviation }: Props) {
             {voter.fullName}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {voting.name} · Desviación media:{" "}
+            {voting.name} ·{" "}
+            <span
+              className="cursor-help underline decoration-dotted underline-offset-2"
+              title="Desviación media respecto al consenso calculado sin el voto de este votante (leave-one-out), para que su voto no se compare consigo mismo."
+            >
+              Desviación media
+            </span>
+            :{" "}
             <span className="font-mono font-bold text-foreground">
               {deviation.meanAbsDeviation.toLocaleString("es-ES", {
                 minimumFractionDigits: 2,

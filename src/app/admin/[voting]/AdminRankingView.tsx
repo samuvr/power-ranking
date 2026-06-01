@@ -144,9 +144,14 @@ export function AdminRankingView({
       )}
 
       <section aria-label="Votantes">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted">
           Votantes ({voters.length}) · clasificación por desviación
         </h2>
+        <p className="mb-3 text-xs text-muted">
+          La desviación de cada votante se mide contra el consenso calculado{" "}
+          <strong>sin su propio voto</strong> (leave-one-out), para que un voto
+          extremo no se compare consigo mismo. Menor = más alineado con el resto.
+        </p>
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
           {voters.map((v) => (
             <li
@@ -170,7 +175,10 @@ export function AdminRankingView({
                       maximumFractionDigits: 2,
                     })}
                   </p>
-                  <p className="text-[10px] uppercase tracking-wide text-muted">
+                  <p
+                    className="cursor-help text-[10px] uppercase tracking-wide text-muted"
+                    title="Desviación media respecto al consenso calculado sin el voto de este votante (leave-one-out)."
+                  >
                     desv. media
                   </p>
                 </div>
