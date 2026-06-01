@@ -7,7 +7,7 @@ export type Qb = {
 // Lista provisional de QBs titulares de la NFL 2026.
 // Editar libremente cuando se confirmen titulares definitivos.
 export const QBS: Qb[] = [
-  { id: "jacoby-brisset", name: "Jacoby Brisset", teamAbbr: "ARI" },
+  { id: "jacoby-brisset", name: "Jacoby Brissett", teamAbbr: "ARI" },
   { id: "penix-tua", name: "Michael Penix Jr.", teamAbbr: "ATL" },
   { id: "lamar-jackson", name: "Lamar Jackson", teamAbbr: "BAL" },
   { id: "josh-allen", name: "Josh Allen", teamAbbr: "BUF" },
