@@ -31,8 +31,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "QB Rankings NFL 2026",
-  description: "Crea tu top 32 de QB titulares de la NFL 2026",
+  title: "Power Ranking NFL 2026",
+  description: "Crea tu top 32 de equipos de la NFL 2026",
 };
 
 export const viewport: Viewport = {

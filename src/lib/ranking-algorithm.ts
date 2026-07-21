@@ -11,7 +11,7 @@ export const ROUNDS: Round[] = [
 ];
 
 export type GlobalRankingEntry = {
-  qbId: string;
+  teamAbbr: string;
   finalPosition: number;
   pointsInRound: number;
   roundIndex: number;
@@ -20,7 +20,7 @@ export type GlobalRankingEntry = {
 export type RoundBreakdown = {
   roundIndex: number;
   positionsAssigned: [number, number];
-  scores: Array<{ qbId: string; points: number; assigned: boolean }>;
+  scores: Array<{ teamAbbr: string; points: number; assigned: boolean }>;
 };
 
 export type GlobalRankingResult = {
@@ -29,21 +29,21 @@ export type GlobalRankingResult = {
   rounds: RoundBreakdown[];
 };
 
-type QbStats = {
+type TeamStats = {
   positionCounts: Map<number, number>;
   sortedUniqueDesc: number[];
   sum: number;
 };
 
-function buildQbStats(allRankings: string[][]): Map<string, QbStats> {
-  const stats = new Map<string, QbStats>();
+function buildTeamStats(allRankings: string[][]): Map<string, TeamStats> {
+  const stats = new Map<string, TeamStats>();
   for (const ranking of allRankings) {
-    ranking.forEach((qbId, idx) => {
+    ranking.forEach((teamAbbr, idx) => {
       const pos = idx + 1;
-      let s = stats.get(qbId);
+      let s = stats.get(teamAbbr);
       if (!s) {
         s = { positionCounts: new Map(), sortedUniqueDesc: [], sum: 0 };
-        stats.set(qbId, s);
+        stats.set(teamAbbr, s);
       }
       s.positionCounts.set(pos, (s.positionCounts.get(pos) ?? 0) + 1);
       s.sum += pos;
@@ -58,7 +58,7 @@ function buildQbStats(allRankings: string[][]): Map<string, QbStats> {
 // Devuelve negativo si `aId` debe ir antes en `sortedScores` (peor → recibe
 // peor posición final). Cadena de 5 criterios: peor única, veces que la recibe,
 // segunda peor única, veces que la recibe y, en último lugar, suma total.
-function compareTie(aId: string, bId: string, stats: Map<string, QbStats>): number {
+function compareTie(aId: string, bId: string, stats: Map<string, TeamStats>): number {
   const a = stats.get(aId);
   const b = stats.get(bId);
   if (!a || !b) return 0;
@@ -85,50 +85,50 @@ function compareTie(aId: string, bId: string, stats: Map<string, QbStats>): numb
 /**
  * Computes the global ranking using the iterative bottom-up algorithm.
  * `allRankings` is an array of user rankings, each being an ordered array
- * of QB ids from position 1 (best) to position N (worst).
+ * of team ids from position 1 (best) to position N (worst).
  */
 export function computeGlobalRanking(allRankings: string[][]): GlobalRankingResult {
   const orderedWorstFirst: GlobalRankingEntry[] = [];
   const orderedSet = new Set<string>();
   const breakdowns: RoundBreakdown[] = [];
-  const qbStats = buildQbStats(allRankings);
+  const teamStats = buildTeamStats(allRankings);
 
   for (let roundIdx = 0; roundIdx < ROUNDS.length; roundIdx++) {
     const round = ROUNDS[roundIdx];
     const scores = new Map<string, number>();
 
     for (const ranking of allRankings) {
-      const unranked = ranking.filter((qb) => !orderedSet.has(qb));
+      const unranked = ranking.filter((team) => !orderedSet.has(team));
       const bottomN = unranked.slice(-round.count);
       // bottomN[bottomN.length - 1] = peor del votante → recibe points[0]
       for (let i = 0; i < bottomN.length; i++) {
-        const qb = bottomN[bottomN.length - 1 - i];
-        scores.set(qb, (scores.get(qb) ?? 0) + round.points[i]);
+        const team = bottomN[bottomN.length - 1 - i];
+        scores.set(team, (scores.get(team) ?? 0) + round.points[i]);
       }
     }
 
     const sortedScores = [...scores.entries()].sort((a, b) => {
       if (b[1] !== a[1]) return b[1] - a[1];
-      return compareTie(a[0], b[0], qbStats);
+      return compareTie(a[0], b[0], teamStats);
     });
 
     const startPos = 32 - orderedWorstFirst.length;
     const taken = sortedScores.slice(0, round.count);
 
     for (let i = 0; i < taken.length; i++) {
-      const [qbId, points] = taken[i];
+      const [teamAbbr, points] = taken[i];
       const finalPosition = startPos - i;
-      orderedWorstFirst.push({ qbId, finalPosition, pointsInRound: points, roundIndex: roundIdx });
-      orderedSet.add(qbId);
+      orderedWorstFirst.push({ teamAbbr, finalPosition, pointsInRound: points, roundIndex: roundIdx });
+      orderedSet.add(teamAbbr);
     }
 
     breakdowns.push({
       roundIndex: roundIdx,
       positionsAssigned: [startPos - taken.length + 1, startPos],
-      scores: sortedScores.map(([qbId, points]) => ({
-        qbId,
+      scores: sortedScores.map(([teamAbbr, points]) => ({
+        teamAbbr,
         points,
-        assigned: orderedSet.has(qbId),
+        assigned: orderedSet.has(teamAbbr),
       })),
     });
   }

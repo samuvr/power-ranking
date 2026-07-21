@@ -1,7 +1,6 @@
 import { ImageResponse } from "next/og";
 import { getRankingById, getVotingById } from "@/lib/db/client";
-import { getQbById } from "@/data/qbs";
-import { getTeamByAbbr, teamLogoUrl } from "@/data/teams";
+import { findTeamByAbbr, teamLogoUrl } from "@/data/teams";
 
 export const runtime = "nodejs";
 
@@ -101,16 +100,15 @@ export async function GET(req: Request, { params }: { params: Params }) {
     ? meta.logo_url
     : `${origin}${meta.logo_url}`;
 
-  const rows = ranking.positions.map((qbId, idx) => {
-    const qb = getQbById(qbId);
-    const team = qb ? getTeamByAbbr(qb.teamAbbr) : null;
+  const rows = ranking.positions.map((teamAbbr, idx) => {
+    const team = findTeamByAbbr(teamAbbr);
     return {
       pos: idx + 1,
-      name: qb?.name ?? "—",
-      teamAbbr: qb?.teamAbbr ?? "??",
+      name: team ? `${team.location} ${team.name}` : "—",
+      teamAbbr: team?.abbr ?? "??",
       teamColor: team?.primaryColor ?? "#222",
       teamText: team?.secondaryColor ?? "#fff",
-      logoUrl: qb ? teamLogoUrl(qb.teamAbbr) : null,
+      logoUrl: team ? teamLogoUrl(team.abbr) : null,
     };
   });
 

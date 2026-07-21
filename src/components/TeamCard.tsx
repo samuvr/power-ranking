@@ -1,22 +1,24 @@
 "use client";
 
-import { type Qb } from "@/data/qbs";
+import { type Team } from "@/data/teams";
 import { TeamMark } from "./TeamMark";
 
 type Props = {
-  qb: Qb;
+  team: Team;
   onTap?: () => void;
   disabled?: boolean;
   compact?: boolean;
 };
 
-export function QbCard({ qb, onTap, disabled, compact }: Props) {
+export function TeamCard({ team, onTap, disabled, compact }: Props) {
   const content = (
     <>
-      <TeamMark abbr={qb.teamAbbr} size={compact ? 36 : 44} />
+      <TeamMark abbr={team.abbr} size={compact ? 36 : 44} />
       <div className="min-w-0 flex-1 text-left">
-        <p className={`truncate font-semibold ${compact ? "text-sm" : "text-base"}`}>{qb.name}</p>
-        <p className="truncate font-mono text-xs text-muted">{qb.teamAbbr}</p>
+        <p className={`truncate font-semibold ${compact ? "text-sm" : "text-base"}`}>
+          {team.location} {team.name}
+        </p>
+        <p className="truncate font-mono text-xs text-muted">{team.abbr}</p>
       </div>
     </>
   );

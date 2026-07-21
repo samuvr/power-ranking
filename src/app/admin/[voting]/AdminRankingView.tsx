@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { getQbById } from "@/data/qbs";
-import { getTeamByAbbr } from "@/data/teams";
-import { computeAnyaRanking } from "@/data/anya";
+import { findTeamByAbbr } from "@/data/teams";
+import { computeMetricRanking } from "@/data/power-metric";
 import { TeamMark } from "@/components/TeamMark";
 import type { VotingPublic } from "@/lib/db/client";
 import type { GlobalRankingResult } from "@/lib/ranking-algorithm";
@@ -41,7 +40,7 @@ export function AdminRankingView({
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [round, setRound] = useState(initialRound);
-  const [showAnya, setShowAnya] = useState(false);
+  const [showMetric, setShowMetric] = useState(false);
 
   const totalRounds = result.rounds.length;
 
@@ -117,29 +116,29 @@ export function AdminRankingView({
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
-          checked={showAnya}
-          onChange={(e) => setShowAnya(e.target.checked)}
+          checked={showMetric}
+          onChange={(e) => setShowMetric(e.target.checked)}
         />
-        <span>Comparar con ANY/A (Últimas 3 temporadas)</span>
+        <span>Comparar con diferencial de puntos</span>
         <span
           className="cursor-help text-muted"
           tabIndex={0}
-          title="Yardas netas ajustadas por intento de pase es una estadística avanzada que mide la eficiencia de un QB teniendo en cuenta yardas de pase, touchdowns, intercepciones y sacks en una única métrica. "
-          aria-label="Yardas netas ajustadas por intento de pase es una estadística avanzada que mide la eficiencia de un QB teniendo en cuenta yardas de pase, touchdowns, intercepciones y sacks en una única métrica. "
+          title="El diferencial de puntos (puntos anotados - puntos recibidos) es una estadística objetiva de rendimiento de equipo, independiente de la votación."
+          aria-label="El diferencial de puntos (puntos anotados - puntos recibidos) es una estadística objetiva de rendimiento de equipo, independiente de la votación."
         >
           ⓘ
         </span>
       </label>
 
       {mode === "list" ? (
-        <RankingList result={result} showAnya={showAnya} />
+        <RankingList result={result} showMetric={showMetric} />
       ) : (
         <RankingStream
           result={result}
           round={round}
           totalRounds={totalRounds}
           accent={voting.accent}
-          showAnya={showAnya}
+          showMetric={showMetric}
           onPrev={() => setRoundAndSync(Math.max(0, round - 1))}
           onNext={() => setRoundAndSync(Math.min(totalRounds - 1, round + 1))}
         />
@@ -291,19 +290,19 @@ function ExportActions({
 
 function RankingList({
   result,
-  showAnya,
+  showMetric,
 }: {
   result: GlobalRankingResult;
-  showAnya: boolean;
+  showMetric: boolean;
 }) {
-  const historyByQb = useMemo(() => {
+  const historyByTeam = useMemo(() => {
     const map = new Map<string, Array<{ roundIndex: number; points: number }>>();
     for (const round of result.rounds) {
       for (const score of round.scores) {
         if (score.points <= 0) continue;
-        const arr = map.get(score.qbId) ?? [];
+        const arr = map.get(score.teamAbbr) ?? [];
         arr.push({ roundIndex: round.roundIndex, points: score.points });
-        map.set(score.qbId, arr);
+        map.set(score.teamAbbr, arr);
       }
     }
     return map;
@@ -312,23 +311,24 @@ function RankingList({
   return (
     <ol className="space-y-2">
       {result.ranking.map((entry) => {
-        const qb = getQbById(entry.qbId);
-        const team = qb ? getTeamByAbbr(qb.teamAbbr) : null;
-        const history = historyByQb.get(entry.qbId) ?? [];
+        const team = findTeamByAbbr(entry.teamAbbr);
+        const history = historyByTeam.get(entry.teamAbbr) ?? [];
         return (
           <li
-            key={entry.qbId}
+            key={entry.teamAbbr}
             className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2"
           >
             <div className="w-10 text-right font-mono text-lg font-bold text-muted">
               {entry.finalPosition.toString().padStart(2, "0")}
             </div>
-            {team && qb && <TeamMark abbr={qb.teamAbbr} size={36} />}
+            {team && <TeamMark abbr={team.abbr} size={36} />}
             <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold">{qb?.name ?? entry.qbId}</p>
+              <p className="truncate font-semibold">
+                {team ? `${team.location} ${team.name}` : entry.teamAbbr}
+              </p>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                 <span>
-                  {qb?.teamAbbr} · ronda {entry.roundIndex + 1} · {entry.pointsInRound} pts
+                  {team?.abbr} · ronda {entry.roundIndex + 1} · {entry.pointsInRound} pts
                 </span>
                 {history.length > 0 && (
                   <span className="flex flex-wrap items-center gap-1">
@@ -352,8 +352,8 @@ function RankingList({
                 )}
               </div>
             </div>
-            {showAnya && (
-              <AnyaBadge qbId={entry.qbId} votePosition={entry.finalPosition} />
+            {showMetric && (
+              <MetricBadge teamAbbr={entry.teamAbbr} votePosition={entry.finalPosition} />
             )}
           </li>
         );
@@ -367,7 +367,7 @@ function RankingStream({
   round,
   totalRounds,
   accent,
-  showAnya,
+  showMetric,
   onPrev,
   onNext,
 }: {
@@ -375,7 +375,7 @@ function RankingStream({
   round: number;
   totalRounds: number;
   accent: string;
-  showAnya: boolean;
+  showMetric: boolean;
   onPrev: () => void;
   onNext: () => void;
 }) {
@@ -388,14 +388,14 @@ function RankingStream({
         .sort((a, b) => b.finalPosition - a.finalPosition),
     [result.ranking, round],
   );
-  const historyByQb = useMemo(() => {
+  const historyByTeam = useMemo(() => {
     const map = new Map<string, Array<{ roundIndex: number; points: number }>>();
     for (const r of result.rounds) {
       for (const score of r.scores) {
         if (score.points <= 0) continue;
-        const arr = map.get(score.qbId) ?? [];
+        const arr = map.get(score.teamAbbr) ?? [];
         arr.push({ roundIndex: r.roundIndex, points: score.points });
-        map.set(score.qbId, arr);
+        map.set(score.teamAbbr, arr);
       }
     }
     return map;
@@ -439,24 +439,25 @@ function RankingStream({
 
       <ol className="space-y-2">
         {entries.map((entry) => {
-          const qb = getQbById(entry.qbId);
-          const team = qb ? getTeamByAbbr(qb.teamAbbr) : null;
-          const history = historyByQb.get(entry.qbId) ?? [];
+          const team = findTeamByAbbr(entry.teamAbbr);
+          const history = historyByTeam.get(entry.teamAbbr) ?? [];
           return (
             <li
-              key={entry.qbId}
+              key={entry.teamAbbr}
               className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-3"
               style={{ borderLeft: `4px solid ${accent}` }}
             >
               <div className="w-12 text-right font-mono text-2xl font-black">
                 {entry.finalPosition.toString().padStart(2, "0")}
               </div>
-              {team && qb && <TeamMark abbr={qb.teamAbbr} size={44} />}
+              {team && <TeamMark abbr={team.abbr} size={44} />}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base font-bold">{qb?.name ?? entry.qbId}</p>
+                <p className="truncate text-base font-bold">
+                  {team ? `${team.location} ${team.name}` : entry.teamAbbr}
+                </p>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                   <span>
-                    {qb?.teamAbbr} · {entry.pointsInRound} pts
+                    {team?.abbr} · {entry.pointsInRound} pts
                   </span>
                   {history.length > 0 && (
                     <span className="flex flex-wrap items-center gap-1">
@@ -480,8 +481,8 @@ function RankingStream({
                   )}
                 </div>
               </div>
-              {showAnya && (
-                <AnyaBadge qbId={entry.qbId} votePosition={entry.finalPosition} />
+              {showMetric && (
+                <MetricBadge teamAbbr={entry.teamAbbr} votePosition={entry.finalPosition} />
               )}
             </li>
           );
@@ -503,33 +504,35 @@ function RankingStream({
   );
 }
 
-const ANYA_RANKING = computeAnyaRanking();
+const METRIC_RANKING = computeMetricRanking();
 
-// Bloque comparativo ANY/A mostrado a la derecha de cada QB: valor ANY/A, puesto
-// en el ranking de ANY/A y diferencia respecto al puesto de la votación.
-function AnyaBadge({
-  qbId,
+// Bloque comparativo mostrado a la derecha de cada equipo: valor de
+// diferencial de puntos, puesto en ese ranking y diferencia respecto al
+// puesto de la votación.
+function MetricBadge({
+  teamAbbr,
   votePosition,
 }: {
-  qbId: string;
+  teamAbbr: string;
   votePosition: number;
 }) {
-  const info = ANYA_RANKING.get(qbId);
+  const info = METRIC_RANKING.get(teamAbbr);
 
-  // Sin dato de ANY/A (p.ej. Willis): solo N/D, sin puesto ni diferencia.
+  // Sin dato: solo N/D, sin puesto ni diferencia.
   if (!info || info.value === null || info.rank === null) {
     return (
       <div className="shrink-0 text-right text-xs text-muted">
         <p className="font-mono font-bold">N/D</p>
-        <p className="text-[10px] uppercase tracking-wide">ANY/A</p>
+        <p className="text-[10px] uppercase tracking-wide">DIF</p>
       </div>
     );
   }
 
   const diff = votePosition - info.rank;
   const value = info.value.toLocaleString("es-ES", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+    signDisplay: "always",
   });
 
   let diffEl: ReactNode;
@@ -544,8 +547,8 @@ function AnyaBadge({
     const sign = diff > 0 ? "+" : "−";
     const title =
       diff > 0
-        ? `Infravalorado por la votación (${Math.abs(diff)} puestos por debajo de su ANY/A)`
-        : `Sobrevalorado por la votación (${Math.abs(diff)} puestos por encima de su ANY/A)`;
+        ? `Infravalorado por la votación (${Math.abs(diff)} puestos por debajo de su diferencial de puntos)`
+        : `Sobrevalorado por la votación (${Math.abs(diff)} puestos por encima de su diferencial de puntos)`;
     diffEl = (
       <span
         className="rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold"

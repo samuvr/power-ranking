@@ -1,11 +1,11 @@
 "use client";
 
-import { type Qb } from "@/data/qbs";
+import { type Team } from "@/data/teams";
 import { TeamMark } from "./TeamMark";
 
 type Props = {
   position: number;
-  qb: Qb | null;
+  team: Team | null;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMoveUp: () => void;
@@ -13,18 +13,20 @@ type Props = {
   onRemove: () => void;
 };
 
-export function RankingSlot({ position, qb, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onRemove }: Props) {
+export function RankingSlot({ position, team, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onRemove }: Props) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-2 py-2">
       <div className="flex w-9 shrink-0 items-center justify-center font-mono text-base font-bold text-foreground">
         {position.toString().padStart(2, "0")}
       </div>
-      {qb ? (
+      {team ? (
         <>
-          <TeamMark abbr={qb.teamAbbr} size={36} />
+          <TeamMark abbr={team.abbr} size={36} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{qb.name}</p>
-            <p className="truncate font-mono text-xs text-muted">{qb.teamAbbr}</p>
+            <p className="truncate text-sm font-semibold">
+              {team.location} {team.name}
+            </p>
+            <p className="truncate font-mono text-xs text-muted">{team.abbr}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <button

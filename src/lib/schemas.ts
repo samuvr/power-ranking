@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { getQbIds, TOTAL_QBS } from "@/data/qbs";
+import { getTeamAbbrs, TOTAL_TEAMS } from "@/data/teams";
 
-const QB_ID_SET = new Set(getQbIds());
+const TEAM_ABBR_SET = new Set(getTeamAbbrs());
 
 // Normaliza a Title Case: minúsculas + capitaliza tras espacio, guión o apóstrofo.
 // Maneja acentos (à-ÿ): "ANTONIO ANTON TOME" → "Antonio Anton Tome",
@@ -18,12 +18,12 @@ export const RankingSubmissionSchema = z.object({
   voting: z.guid(),
   positions: z
     .array(z.string())
-    .length(TOTAL_QBS)
+    .length(TOTAL_TEAMS)
     .refine((arr) => new Set(arr).size === arr.length, {
-      message: "positions must contain unique QB ids",
+      message: "positions must contain unique team ids",
     })
-    .refine((arr) => arr.every((id) => QB_ID_SET.has(id)), {
-      message: "positions contains an unknown QB id",
+    .refine((arr) => arr.every((id) => TEAM_ABBR_SET.has(id)), {
+      message: "positions contains an unknown team id",
     }),
 });
 

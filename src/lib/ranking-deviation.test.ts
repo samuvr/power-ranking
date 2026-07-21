@@ -7,7 +7,7 @@ import {
 import { computeGlobalRanking } from "./ranking-algorithm";
 
 function makeRanking(ids: number[]): string[] {
-  return ids.map((n) => `qb${n.toString().padStart(2, "0")}`);
+  return ids.map((n) => `team${n.toString().padStart(2, "0")}`);
 }
 
 const IDENTITY = Array.from({ length: 32 }, (_, i) => i + 1);
@@ -19,33 +19,33 @@ describe("computeDeviation", () => {
     const result = computeDeviation(ranking, consensus);
 
     expect(result.meanAbsDeviation).toBe(0);
-    expect(result.perQb).toHaveLength(32);
-    expect(result.perQb.every((e) => e.diff === 0)).toBe(true);
+    expect(result.perTeam).toHaveLength(32);
+    expect(result.perTeam.every((e) => e.diff === 0)).toBe(true);
   });
 
-  it("computes per-QB diff as consensusPos - voterPos and averages the abs", () => {
-    // Con un único votante identidad, el consenso coloca qbXX en la posición XX.
+  it("computes per-team diff as consensusPos - voterPos and averages the abs", () => {
+    // Con un único votante identidad, el consenso coloca teamXX en la posición XX.
     const consensus = computeGlobalRanking([makeRanking(IDENTITY)]).ranking;
-    // El votante intercambia qb02 y qb04 dentro de la lista de 32.
+    // El votante intercambia team02 y team04 dentro de la lista de 32.
     const voter = makeRanking([1, 4, 3, 2, ...IDENTITY.slice(4)]);
     const result = computeDeviation(voter, consensus);
 
-    const byQb = new Map(result.perQb.map((e) => [e.qbId, e]));
-    // qb04: consenso 4, votante 2 → diff +2 (sobrevalorado)
-    expect(byQb.get("qb04")?.diff).toBe(2);
-    // qb02: consenso 2, votante 4 → diff -2 (infravalorado)
-    expect(byQb.get("qb02")?.diff).toBe(-2);
-    // Solo dos QBs se desvían (±2 cada uno); el resto coincide.
+    const byTeam = new Map(result.perTeam.map((e) => [e.teamAbbr, e]));
+    // team04: consenso 4, votante 2 → diff +2 (sobrevalorado)
+    expect(byTeam.get("team04")?.diff).toBe(2);
+    // team02: consenso 2, votante 4 → diff -2 (infravalorado)
+    expect(byTeam.get("team02")?.diff).toBe(-2);
+    // Solo dos equipos se desvían (±2 cada uno); el resto coincide.
     expect(result.meanAbsDeviation).toBe(4 / 32);
   });
 
-  it("ignores voter QBs absent from the consensus", () => {
+  it("ignores voter teams absent from the consensus", () => {
     const consensus = computeGlobalRanking([makeRanking([1, 2, 3])]).ranking;
-    const voter = [...makeRanking([1, 2, 3]), "qb99"];
+    const voter = [...makeRanking([1, 2, 3]), "team99"];
     const result = computeDeviation(voter, consensus);
 
-    expect(result.perQb).toHaveLength(3);
-    expect(result.perQb.some((e) => e.qbId === "qb99")).toBe(false);
+    expect(result.perTeam).toHaveLength(3);
+    expect(result.perTeam.some((e) => e.teamAbbr === "team99")).toBe(false);
   });
 });
 
@@ -80,7 +80,7 @@ describe("computeDeviationLeaveOneOut", () => {
     );
 
     expect(loo.meanAbsDeviation).toBe(manual.meanAbsDeviation);
-    expect(loo.perQb).toEqual(manual.perQb);
+    expect(loo.perTeam).toEqual(manual.perTeam);
   });
 
   it("falls back to self-comparison (deviation 0) when there are no other voters", () => {
@@ -88,21 +88,21 @@ describe("computeDeviationLeaveOneOut", () => {
     const result = computeDeviationLeaveOneOut(only, []);
 
     expect(result.meanAbsDeviation).toBe(0);
-    expect(result.perQb).toHaveLength(32);
+    expect(result.perTeam).toHaveLength(32);
   });
 });
 
 describe("topOverratedUnderrated", () => {
-  it("splits QBs by sign of diff, most extreme first", () => {
+  it("splits teams by sign of diff, most extreme first", () => {
     const consensus = computeGlobalRanking([makeRanking(IDENTITY)]).ranking;
-    // El votante intercambia qb01 y qb05 dentro de la lista de 32.
+    // El votante intercambia team01 y team05 dentro de la lista de 32.
     const voter = makeRanking([5, 2, 3, 4, 1, ...IDENTITY.slice(5)]);
-    const { perQb } = computeDeviation(voter, consensus);
-    const { overrated, underrated } = topOverratedUnderrated(perQb, 3);
+    const { perTeam } = computeDeviation(voter, consensus);
+    const { overrated, underrated } = topOverratedUnderrated(perTeam, 3);
 
-    // qb05: consenso 5, votante 1 → diff +4 (más sobrevalorado)
-    expect(overrated[0].qbId).toBe("qb05");
-    // qb01: consenso 1, votante 5 → diff -4 (más infravalorado)
-    expect(underrated[0].qbId).toBe("qb01");
+    // team05: consenso 5, votante 1 → diff +4 (más sobrevalorado)
+    expect(overrated[0].teamAbbr).toBe("team05");
+    // team01: consenso 1, votante 5 → diff -4 (más infravalorado)
+    expect(underrated[0].teamAbbr).toBe("team01");
   });
 });

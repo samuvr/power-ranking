@@ -16,7 +16,7 @@ export function HomeForm({ votings }: Props) {
 
   useEffect(() => {
     try {
-      const stored = sessionStorage.getItem("qbr:user");
+      const stored = sessionStorage.getItem("tpr:user");
       if (stored) {
         const parsed = JSON.parse(stored) as { fullName?: string; email?: string };
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -46,7 +46,7 @@ export function HomeForm({ votings }: Props) {
     }
     try {
       sessionStorage.setItem(
-        "qbr:user",
+        "tpr:user",
         JSON.stringify({ fullName: fullName.trim(), email: email.trim() }),
       );
     } catch {

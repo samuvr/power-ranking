@@ -1,8 +1,7 @@
 import { ImageResponse } from "next/og";
 import { getRankingsByVoting, getVotingBySlug } from "@/lib/db/client";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
-import { getQbById } from "@/data/qbs";
-import { getTeamByAbbr, teamLogoUrl } from "@/data/teams";
+import { findTeamByAbbr, teamLogoUrl } from "@/data/teams";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { hasVotingAdminAccess } from "@/lib/voting-access";
 
@@ -100,21 +99,20 @@ export async function GET(req: Request, { params }: { params: Params }) {
     ? voting.logo_url
     : `${origin}${voting.logo_url}`;
 
-  const qbRows = ranking.map((entry) => {
-    const qb = getQbById(entry.qbId);
-    const team = qb ? getTeamByAbbr(qb.teamAbbr) : null;
+  const teamRows = ranking.map((entry) => {
+    const team = findTeamByAbbr(entry.teamAbbr);
     return {
       pos: entry.finalPosition,
-      name: qb?.name ?? "—",
-      teamAbbr: qb?.teamAbbr ?? "??",
+      name: team ? `${team.location} ${team.name}` : "—",
+      teamAbbr: team?.abbr ?? "??",
       teamColor: team?.primaryColor ?? "#222",
       teamText: team?.secondaryColor ?? "#fff",
-      logoUrl: qb ? teamLogoUrl(qb.teamAbbr) : null,
+      logoUrl: team ? teamLogoUrl(team.abbr) : null,
     };
   });
 
-  const leftCol = qbRows.slice(0, 16);
-  const rightCol = qbRows.slice(16, 32);
+  const leftCol = teamRows.slice(0, 16);
+  const rightCol = teamRows.slice(16, 32);
 
   const fonts = await loadAllFonts();
   const fontDisplay = fonts.some((f) => f.name === "Anton") ? "Anton" : "Inter";

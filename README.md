@@ -1,8 +1,11 @@
-# QBRankings
+# Team Power Rankings
 
-Webapp para crear y compartir tu top 32 de QBs titulares de la NFL 2026, con
-dos votaciones independientes (NFL Alicante y El Capologist) y panel de admin
-con el ranking global calculado mediante un algoritmo iterativo bottom-up.
+Webapp para crear y compartir tu Power Ranking de los 32 equipos titulares de
+la NFL 2026, con votaciones independientes y panel de admin con el ranking
+global calculado mediante un algoritmo iterativo bottom-up.
+
+Este proyecto es un fork de [QBRankings](https://github.com/samuvr/qbrankings),
+adaptado para rankear equipos en lugar de quarterbacks.
 
 ## Stack
 
@@ -30,7 +33,7 @@ después de conectar la base de datos al proyecto.
 ```
 npm run dev          # arranca en http://localhost:3000
 npm run build        # build de producción
-npm run db:migrate   # crea el enum + tabla rankings (idempotente)
+npm run db:migrate   # crea las tablas votings + rankings (idempotente)
 npm test             # tests del algoritmo (vitest)
 npm run lint         # eslint
 ```
@@ -38,13 +41,22 @@ npm run lint         # eslint
 ## Flujo
 
 1. `/` — landing con nombre + email + selector visual de votación.
-2. `/vote/[voting]` — tap en QB para colocarlo, botones ↑/↓/✕ para reordenar,
-   autosave en `localStorage`.
+2. `/vote/[voting]` — tap en un equipo para colocarlo, botones ↑/↓/✕ para
+   reordenar, autosave en `localStorage`.
 3. `POST /api/rankings` — upsert por `(email, voting)`.
 4. `/vote/[voting]/success?id=…` — muestra la imagen PNG generada por
    `/api/rankings/[id]/image`.
 5. `/admin` — login. Tras auth, `/admin/[voting]` calcula y muestra el ranking
    global. Solo accesible con la contraseña.
+
+## Datos de equipos
+
+`src/data/teams.ts` contiene los 32 equipos de la NFL (abreviatura, nombre,
+ciudad, colores) y `teamLogoUrl()` resuelve el logo en vivo desde ESPN.
+`src/data/power-metric.ts` contiene una métrica objetiva de referencia
+(diferencial de puntos) usada en el panel de admin para comparar el consenso
+de la votación contra el rendimiento real de cada equipo — es una lista
+provisional, actualízala con datos reales de la temporada.
 
 ## Algoritmo de ranking global
 

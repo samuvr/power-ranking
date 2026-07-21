@@ -49,6 +49,20 @@ export function getTeamByAbbr(abbr: string): Team {
   return team;
 }
 
+export function findTeamByAbbr(abbr: string): Team | undefined {
+  return TEAMS_BY_ABBR.get(abbr);
+}
+
+export function getAllTeams(): Team[] {
+  return TEAMS;
+}
+
+export function getTeamAbbrs(): string[] {
+  return TEAMS.map((t) => t.abbr);
+}
+
+export const TOTAL_TEAMS = TEAMS.length;
+
 // ESPN usa "wsh" para Washington en vez de "was".
 const ESPN_ABBR_OVERRIDES: Record<string, string> = {
   WAS: "wsh",

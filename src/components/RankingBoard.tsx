@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAllQbs, getQbById, TOTAL_QBS, type Qb } from "@/data/qbs";
+import { getAllTeams, findTeamByAbbr, TOTAL_TEAMS, type Team } from "@/data/teams";
 import type { VotingPublic } from "@/lib/db/client";
-import { QbCard } from "./QbCard";
+import { TeamCard } from "./TeamCard";
 import { RankingSlot } from "./RankingSlot";
 import { VotingLogo } from "./VotingLogo";
 
@@ -16,20 +16,20 @@ type StoredProgress = {
   positions: (string | null)[];
 };
 
-const storageKey = (votingId: string) => `qbr:progress:${votingId}`;
-const userDataKey = "qbr:user";
+const storageKey = (votingId: string) => `tpr:progress:${votingId}`;
+const userDataKey = "tpr:user";
 
 type Props = { voting: VotingPublic };
 
 export function RankingBoard({ voting }: Props) {
   const router = useRouter();
-  const allQbs = useMemo(() => getAllQbs(), []);
+  const allTeams = useMemo(() => getAllTeams(), []);
   const votingMeta = voting;
   const votingId = voting.id;
   const votingSlug = voting.slug;
 
   const [positions, setPositions] = useState<(string | null)[]>(
-    () => Array.from({ length: TOTAL_QBS }, () => null),
+    () => Array.from({ length: TOTAL_TEAMS }, () => null),
   );
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -51,7 +51,7 @@ export function RankingBoard({ voting }: Props) {
       const stored = localStorage.getItem(storageKey(votingId));
       if (stored) {
         const parsed = JSON.parse(stored) as StoredProgress;
-        if (Array.isArray(parsed.positions) && parsed.positions.length === TOTAL_QBS) {
+        if (Array.isArray(parsed.positions) && parsed.positions.length === TOTAL_TEAMS) {
           setPositions(parsed.positions);
         }
         if (parsed.fullName) setFullName((cur) => cur || parsed.fullName);
@@ -75,16 +75,16 @@ export function RankingBoard({ voting }: Props) {
   }, [votingId, positions, fullName, email, hydrated]);
 
   const placedSet = useMemo(() => new Set(positions.filter((v): v is string => !!v)), [positions]);
-  const pool = useMemo(() => allQbs.filter((q) => !placedSet.has(q.id)), [allQbs, placedSet]);
+  const pool = useMemo(() => allTeams.filter((t) => !placedSet.has(t.abbr)), [allTeams, placedSet]);
   const placedCount = positions.length - pool.length;
-  const complete = placedCount === TOTAL_QBS;
+  const complete = placedCount === TOTAL_TEAMS;
 
-  const placeQb = useCallback((qbId: string) => {
+  const placeTeam = useCallback((teamAbbr: string) => {
     setPositions((cur) => {
       const idx = cur.findIndex((v) => v === null);
       if (idx === -1) return cur;
       const next = [...cur];
-      next[idx] = qbId;
+      next[idx] = teamAbbr;
       return next;
     });
     setTab("ranking");
@@ -119,7 +119,7 @@ export function RankingBoard({ voting }: Props) {
       return;
     }
     if (!complete) {
-      setError("Tienes que colocar a los 32 QBs");
+      setError("Tienes que colocar los 32 equipos");
       return;
     }
 
@@ -184,7 +184,7 @@ export function RankingBoard({ voting }: Props) {
               Progreso
             </p>
             <p className="font-mono text-base font-bold">
-              {placedCount.toString().padStart(2, "0")} / {TOTAL_QBS}
+              {placedCount.toString().padStart(2, "0")} / {TOTAL_TEAMS}
             </p>
           </div>
         </div>
@@ -193,7 +193,7 @@ export function RankingBoard({ voting }: Props) {
             <div
               className="h-full transition-all"
               style={{
-                width: `${(placedCount / TOTAL_QBS) * 100}%`,
+                width: `${(placedCount / TOTAL_TEAMS) * 100}%`,
                 background: votingMeta.accent,
               }}
             />
@@ -252,7 +252,7 @@ export function RankingBoard({ voting }: Props) {
               tab === "ranking" ? "bg-surface-2 text-foreground" : "text-muted"
             }`}
           >
-            Mi ranking · {placedCount}/{TOTAL_QBS}
+            Mi ranking · {placedCount}/{TOTAL_TEAMS}
           </button>
         </div>
 
@@ -260,20 +260,20 @@ export function RankingBoard({ voting }: Props) {
           {/* Pool */}
           <section
             className={`${tab === "pool" ? "block" : "hidden"} lg:block`}
-            aria-label="QBs disponibles"
+            aria-label="Equipos disponibles"
           >
             <h2 className="font-subhead mb-2 text-[11px] uppercase tracking-wide text-muted">
-              Toca un QB para añadirlo al siguiente puesto vacío
+              Toca un equipo para añadirlo al siguiente puesto vacío
             </h2>
             <ul className="space-y-2">
               {pool.length === 0 && (
                 <li className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted">
-                  Has colocado a todos los QBs.
+                  Has colocado todos los equipos.
                 </li>
               )}
-              {pool.map((qb) => (
-                <li key={qb.id}>
-                  <QbCard qb={qb} onTap={() => placeQb(qb.id)} />
+              {pool.map((team) => (
+                <li key={team.abbr}>
+                  <TeamCard team={team} onTap={() => placeTeam(team.abbr)} />
                 </li>
               ))}
             </ul>
@@ -288,15 +288,15 @@ export function RankingBoard({ voting }: Props) {
               Tu ranking (1 = mejor, 32 = peor)
             </h2>
             <ol className="space-y-2">
-              {positions.map((qbId, idx) => {
-                const qb: Qb | null = qbId ? getQbById(qbId) ?? null : null;
+              {positions.map((teamAbbr, idx) => {
+                const team: Team | null = teamAbbr ? findTeamByAbbr(teamAbbr) ?? null : null;
                 return (
                   <li key={idx}>
                     <RankingSlot
                       position={idx + 1}
-                      qb={qb}
-                      canMoveUp={idx > 0 && !!qb}
-                      canMoveDown={idx < TOTAL_QBS - 1 && !!qb && !!positions[idx + 1]}
+                      team={team}
+                      canMoveUp={idx > 0 && !!team}
+                      canMoveDown={idx < TOTAL_TEAMS - 1 && !!team && !!positions[idx + 1]}
                       onMoveUp={() => swap(idx, idx - 1)}
                       onMoveDown={() => swap(idx, idx + 1)}
                       onRemove={() => removeAt(idx)}
@@ -324,7 +324,7 @@ export function RankingBoard({ voting }: Props) {
             className="font-subhead w-full rounded-xl px-4 py-3 text-base uppercase tracking-wide text-white transition active:scale-[0.98] disabled:opacity-40"
             style={{ background: votingMeta.accent }}
           >
-            {submitting ? "Enviando…" : complete ? "Enviar ranking" : `Coloca a los ${TOTAL_QBS - placedCount} restantes`}
+            {submitting ? "Enviando…" : complete ? "Enviar ranking" : `Coloca los ${TOTAL_TEAMS - placedCount} restantes`}
           </button>
         </div>
       </footer>

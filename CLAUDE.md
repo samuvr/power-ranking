@@ -4,11 +4,17 @@ Guidance for AI assistants (and humans) working in this repository.
 
 ## What this is
 
-**QBRankings** is a Next.js web app where users build and share their personal
-top‑32 of NFL 2026 starting quarterbacks. It supports **multiple independent
-votings** (e.g. "NFL Alicante", "El Capologist"), each password‑gated, and an
-admin panel that computes a **global consensus ranking** from all submissions
-using an iterative bottom‑up algorithm.
+**Team Power Rankings** is a Next.js web app where users build and share their
+personal Power Ranking of the 32 NFL 2026 teams. It supports **multiple
+independent votings** (e.g. "NFL Alicante", "El Capologist"), each
+password‑gated, and an admin panel that computes a **global consensus
+ranking** from all submissions using an iterative bottom‑up algorithm.
+
+This project is a fork of [QBRankings](https://github.com/samuvr/qbrankings),
+adapted so the rankable entity is a **team** (`src/data/teams.ts`) instead of
+a QB. Most of the app (voting flow, algorithm, DB layer, share images, admin
+dashboard) is unchanged from the original — only the entity being ranked and
+its rendering differ.
 
 The product copy and most code comments are in **Spanish**; keep new
 user‑facing strings and comments in Spanish to match. Code identifiers are in
@@ -69,7 +75,7 @@ src/
     layout.tsx, globals.css
     vote/[voting]/
       access/                  # per-voting voter password gate
-      page.tsx                 # the ranking builder (tap QB → slot, reorder)
+      page.tsx                 # the ranking builder (tap team → slot, reorder)
       success/                 # shows generated share image
     admin/
       page.tsx, LoginForm.tsx  # superadmin login
@@ -81,9 +87,9 @@ src/
       rankings/                # POST submit, GET .../[id]/image (og)
       voting/[slug]/access/    # voter password check → sets cookie
       admin/                   # login, rankings, voters image, votings CRUD/reorder
-  components/                  # QbCard, RankingBoard, RankingSlot, TeamMark,
+  components/                  # TeamCard, RankingBoard, RankingSlot, TeamMark,
                                # VotingForm, VotingSelector, VotingsManager
-  data/                        # qbs.ts, teams.ts, anya.ts (+ anya.test.ts)
+  data/                        # teams.ts, power-metric.ts (+ power-metric.test.ts)
   lib/
     db/client.ts               # all SQL queries + row types
     db/migrate.ts              # schema creation + legacy migration + seeding
@@ -107,25 +113,28 @@ the password hashes (`VotingPublic` / `stripSecrets`).
 
 ### Rankings (`rankings` table)
 One row per `(email, voting)` (unique constraint → upsert on submit). Stores
-`positions` as a JSONB array of QB ids, ordered position 1 (best) … N (worst).
-`voting` is a UUID FK → `votings(id)`.
+`positions` as a JSONB array of team `abbr`s, ordered position 1 (best) … N
+(worst). `voting` is a UUID FK → `votings(id)`.
 
-### QBs (`src/data/qbs.ts`)
-Static list of 32 QBs (`id`, `name`, `teamAbbr`). `TOTAL_QBS` and `getQbIds()`
-drive validation. Submitted `positions` must be exactly `TOTAL_QBS` unique,
-known QB ids. Edit this file when starters change.
+### Teams (`src/data/teams.ts`)
+Static list of the 32 NFL teams (`abbr`, `name`, `location`, colors),
+`teamLogoUrl()` resolves the live ESPN logo. `TOTAL_TEAMS` and
+`getTeamAbbrs()` drive validation. Submitted `positions` must be exactly
+`TOTAL_TEAMS` unique, known team `abbr`s. `getTeamByAbbr` throws on an
+unknown abbr; use `findTeamByAbbr` where the id may not (yet) be valid.
 
-### ANY/A data (`src/data/anya.ts`)
-Static Adjusted Net Yards/Attempt values per QB id (`null` = no data), used in
+### Power metric data (`src/data/power-metric.ts`)
+Static point-differential values per team `abbr` (`null` = no data), used in
 the admin dashboard to compare consensus vs an objective metric. Uses
-competition ranking (1,2,2,4) for ties.
+competition ranking (1,2,2,4) for ties. Provisional/placeholder values —
+update with real season data.
 
 ## The consensus algorithm (`src/lib/ranking-algorithm.ts`)
 
 `computeGlobalRanking(allRankings: string[][])` assigns final positions
 **bottom-up** over 7 rounds:
 
-- Rounds 1–4: each voter's bottom **5** un-placed QBs score `5,4,3,2,1`
+- Rounds 1–4: each voter's bottom **5** un-placed teams score `5,4,3,2,1`
   (worst gets 5). Fills final positions 32→28, 27→23, 22→18, 17→13.
 - Rounds 5–7: bottom **4** score `4,3,2,1`. Fills 12→9, 8→5, 4→1.
 

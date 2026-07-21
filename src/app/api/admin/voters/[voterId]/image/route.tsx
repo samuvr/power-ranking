@@ -4,8 +4,7 @@ import {
   getRankingsByVoting,
   getVotingById,
 } from "@/lib/db/client";
-import { getQbById } from "@/data/qbs";
-import { getTeamByAbbr, teamLogoUrl } from "@/data/teams";
+import { findTeamByAbbr, teamLogoUrl } from "@/data/teams";
 import {
   computeDeviationLeaveOneOut,
   topOverratedUnderrated,
@@ -115,26 +114,25 @@ export async function GET(req: Request, { params }: { params: Params }) {
     ranking.positions,
     allRows.filter((r) => r.id !== ranking.id).map((r) => r.positions),
   );
-  const { overrated, underrated } = topOverratedUnderrated(deviation.perQb, 3);
-  const diffByQb = new Map<string, number>();
-  for (const e of deviation.perQb) diffByQb.set(e.qbId, e.diff);
+  const { overrated, underrated } = topOverratedUnderrated(deviation.perTeam, 3);
+  const diffByTeam = new Map<string, number>();
+  for (const e of deviation.perTeam) diffByTeam.set(e.teamAbbr, e.diff);
 
   const origin = getOrigin(req);
   const votingLogoSrc = meta.logo_url.startsWith("http")
     ? meta.logo_url
     : `${origin}${meta.logo_url}`;
 
-  const rows = ranking.positions.map((qbId, idx) => {
-    const qb = getQbById(qbId);
-    const team = qb ? getTeamByAbbr(qb.teamAbbr) : null;
-    const diff = diffByQb.get(qbId);
+  const rows = ranking.positions.map((teamAbbr, idx) => {
+    const team = findTeamByAbbr(teamAbbr);
+    const diff = diffByTeam.get(teamAbbr);
     return {
       pos: idx + 1,
-      name: qb?.name ?? "—",
-      teamAbbr: qb?.teamAbbr ?? "??",
+      name: team ? `${team.location} ${team.name}` : "—",
+      teamAbbr: team?.abbr ?? "??",
       teamColor: team?.primaryColor ?? "#222",
       teamText: team?.secondaryColor ?? "#fff",
-      logoUrl: qb ? teamLogoUrl(qb.teamAbbr) : null,
+      logoUrl: team ? teamLogoUrl(team.abbr) : null,
       diff,
     };
   });
@@ -470,12 +468,12 @@ function DeviationCol({
         <div style={{ display: "flex", color: MUTED, fontSize: 18 }}>—</div>
       ) : (
         entries.map((entry) => {
-          const qb = getQbById(entry.qbId);
-          const logoUrl = qb ? teamLogoUrl(qb.teamAbbr) : null;
+          const team = findTeamByAbbr(entry.teamAbbr);
+          const logoUrl = team ? teamLogoUrl(team.abbr) : null;
           const sign = entry.diff > 0 ? "+" : "−";
           return (
             <div
-              key={entry.qbId}
+              key={entry.teamAbbr}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -525,7 +523,7 @@ function DeviationCol({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {qb?.name ?? entry.qbId}
+                  {team ? `${team.location} ${team.name}` : entry.teamAbbr}
                 </span>
                 <span style={{ fontFamily: fontMono, fontSize: 13, color: MUTED }}>
                   V#{entry.voterPos} · C#{entry.consensusPos}

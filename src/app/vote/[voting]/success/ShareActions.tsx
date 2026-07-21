@@ -35,7 +35,7 @@ export function ShareActions({ imageUrl, fullName, votingName }: Props) {
       const res = await fetch(imageUrl);
       const blob = await res.blob();
       const file = new File([blob], "ranking.png", { type: "image/png" });
-      const text = `Mi top 32 de QBs NFL 2026 · ${votingName}`;
+      const text = `Mi top 32 de equipos NFL 2026 · ${votingName}`;
       if (typeof navigator !== "undefined" && "share" in navigator) {
         const data: ShareData = { text, files: [file] };
         const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };

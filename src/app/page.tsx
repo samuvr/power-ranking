@@ -24,10 +24,10 @@ export default async function Home() {
         <p className="font-subhead text-xs uppercase tracking-[0.25em] text-muted">
           Temporada 2026
         </p>
-        <h1 className="mt-2 font-display text-6xl uppercase leading-[0.95]">QB Rankings</h1>
+        <h1 className="mt-2 font-display text-6xl uppercase leading-[0.95]">Power Ranking</h1>
         <p className="mt-2 font-subhead text-sm">Un proyecto de NFL Alicante</p>
         <p className="mt-3 text-sm text-muted">
-          Elige tus favoritos y ayuda a crear el ranking global de tu comunidad.
+          Ordena los 32 equipos y ayuda a crear el ranking global de tu comunidad.
         </p>
       </header>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { getQbById } from "@/data/qbs";
+import { findTeamByAbbr } from "@/data/teams";
 import { TeamMark } from "@/components/TeamMark";
 import type { VotingPublic } from "@/lib/db/client";
 import type { DeviationEntry, DeviationResult } from "@/lib/ranking-deviation";
@@ -23,10 +23,10 @@ type Props = {
 };
 
 export function VoterRankingView({ voting, voter, deviation }: Props) {
-  const diffByQb = new Map<string, DeviationEntry>();
-  for (const entry of deviation.perQb) diffByQb.set(entry.qbId, entry);
+  const diffByTeam = new Map<string, DeviationEntry>();
+  for (const entry of deviation.perTeam) diffByTeam.set(entry.teamAbbr, entry);
 
-  const { overrated, underrated } = topOverratedUnderrated(deviation.perQb, 3);
+  const { overrated, underrated } = topOverratedUnderrated(deviation.perTeam, 3);
 
   const version = new Date(voter.updatedAt).getTime();
   const imageUrl = `/api/admin/voters/${voter.id}/image?v=${version}`;
@@ -70,22 +70,24 @@ export function VoterRankingView({ voting, voter, deviation }: Props) {
       </header>
 
       <ol className="space-y-2">
-        {voter.positions.map((qbId, idx) => {
-          const qb = getQbById(qbId);
-          const entry = diffByQb.get(qbId);
+        {voter.positions.map((teamAbbr, idx) => {
+          const team = findTeamByAbbr(teamAbbr);
+          const entry = diffByTeam.get(teamAbbr);
           const diff = entry?.diff ?? 0;
           return (
             <li
-              key={qbId}
+              key={teamAbbr}
               className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2"
             >
               <div className="w-10 text-right font-mono text-lg font-bold text-muted">
                 {(idx + 1).toString().padStart(2, "0")}
               </div>
-              {qb && <TeamMark abbr={qb.teamAbbr} size={36} />}
+              {team && <TeamMark abbr={team.abbr} size={36} />}
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold">{qb?.name ?? qbId}</p>
-                <p className="text-xs text-muted">{qb?.teamAbbr}</p>
+                <p className="truncate font-semibold">
+                  {team ? `${team.location} ${team.name}` : teamAbbr}
+                </p>
+                <p className="text-xs text-muted">{team?.abbr}</p>
               </div>
               <DiffBadge diff={diff} hasConsensus={entry !== undefined} />
             </li>
@@ -184,18 +186,18 @@ function DeviationColumn({
       ) : (
         <ul className="space-y-2">
           {entries.map((entry) => {
-            const qb = getQbById(entry.qbId);
+            const team = findTeamByAbbr(entry.teamAbbr);
             const sign = entry.diff > 0 ? "+" : "−";
             const color = variant === "over" ? "#16a34a" : "#dc2626";
             return (
               <li
-                key={entry.qbId}
+                key={entry.teamAbbr}
                 className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-2 py-2"
               >
-                {qb && <TeamMark abbr={qb.teamAbbr} size={32} />}
+                {team && <TeamMark abbr={team.abbr} size={32} />}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">
-                    {qb?.name ?? entry.qbId}
+                    {team ? `${team.location} ${team.name}` : entry.teamAbbr}
                   </p>
                   <p className="text-[11px] text-muted">
                     Votante #{entry.voterPos} · Consenso #{entry.consensusPos}

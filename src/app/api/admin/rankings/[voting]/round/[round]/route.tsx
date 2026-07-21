@@ -1,8 +1,7 @@
 import { ImageResponse } from "next/og";
 import { getRankingsByVoting, getVotingBySlug } from "@/lib/db/client";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
-import { getQbById } from "@/data/qbs";
-import { getTeamByAbbr, teamLogoUrl } from "@/data/teams";
+import { findTeamByAbbr, teamLogoUrl } from "@/data/teams";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { hasVotingAdminAccess } from "@/lib/voting-access";
 
@@ -103,7 +102,7 @@ export async function GET(req: Request, { params }: { params: Params }) {
   const [low, high] = breakdown.positionsAssigned;
   const totalRounds = result.rounds.length;
 
-  // QBs de esta fase, ordenados de peor (mayor posición) a mejor
+  // Equipos de esta fase, ordenados de peor (mayor posición) a mejor
   const entries = result.ranking
     .filter((e) => e.roundIndex === roundIndex)
     .sort((a, b) => b.finalPosition - a.finalPosition);
@@ -235,7 +234,7 @@ export async function GET(req: Request, { params }: { params: Params }) {
             }}
           />
 
-          {/* Lista de QBs */}
+          {/* Lista de equipos */}
           <div
             style={{
               display: "flex",
@@ -245,15 +244,14 @@ export async function GET(req: Request, { params }: { params: Params }) {
             }}
           >
             {entries.map((entry) => {
-              const qb = getQbById(entry.qbId);
-              const team = qb ? getTeamByAbbr(qb.teamAbbr) : null;
-              const logoUrl = qb ? teamLogoUrl(qb.teamAbbr) : null;
+              const team = findTeamByAbbr(entry.teamAbbr);
+              const logoUrl = team ? teamLogoUrl(team.abbr) : null;
               const teamColor = team?.primaryColor ?? "#222";
               const teamText = team?.secondaryColor ?? "#fff";
 
               return (
                 <div
-                  key={entry.qbId}
+                  key={entry.teamAbbr}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -313,7 +311,7 @@ export async function GET(req: Request, { params }: { params: Params }) {
                           border: `2px solid ${teamText}`,
                         }}
                       >
-                        {qb?.teamAbbr ?? "??"}
+                        {team?.abbr ?? "??"}
                       </div>
                     )}
                   </div>
@@ -331,10 +329,10 @@ export async function GET(req: Request, { params }: { params: Params }) {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {qb?.name ?? entry.qbId}
+                      {team ? `${team.location} ${team.name}` : entry.teamAbbr}
                     </span>
                     <span style={{ fontFamily: fontMono, fontSize: 20, color: MUTED }}>
-                      {qb?.teamAbbr ?? "??"}
+                      {team?.abbr ?? "??"}
                     </span>
                   </div>
                 </div>

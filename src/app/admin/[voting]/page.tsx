@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getRankingsByVoting, getVotingBySlug } from "@/lib/db/client";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import { computeDeviationLeaveOneOut } from "@/lib/ranking-deviation";
-import { getAllQbs } from "@/data/qbs";
+import { getAllTeams } from "@/data/teams";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { hasVotingAdminAccess } from "@/lib/voting-access";
 import { AdminRankingView } from "./AdminRankingView";
@@ -33,7 +33,7 @@ export default async function AdminDashboardPage({
 
   const rows = await getRankingsByVoting(voting.id);
   const result = computeGlobalRanking(rows.map((r) => r.positions));
-  const qbCount = getAllQbs().length;
+  const teamCount = getAllTeams().length;
 
   const initialMode = search.mode === "stream" ? "stream" : "list";
   const initialRound = Math.max(
@@ -57,7 +57,7 @@ export default async function AdminDashboardPage({
           </p>
           <h1 className="font-display text-4xl uppercase leading-tight">{voting.name}</h1>
           <p className="mt-1 text-sm text-muted">
-            {result.totalSubmissions} envíos · {qbCount} QBs en 7 rondas
+            {result.totalSubmissions} envíos · {teamCount} equipos en 7 rondas
           </p>
         </div>
         {isSuper && (
