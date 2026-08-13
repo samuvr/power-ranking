@@ -10,7 +10,7 @@ import { getCurrentUser } from "@/lib/user-auth";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import {
-  computeDeviation,
+  computeDeviationLeaveOneOut,
   topOverratedUnderrated,
   type DeviationEntry,
 } from "@/lib/ranking-deviation";
@@ -61,11 +61,17 @@ export default async function ConsensoPage() {
     ]),
   );
 
-  // Comparativa con el ranking del usuario. Se compara contra el consensus que
-  // se está pintando (que incluye su propio voto) para que los números de cada
-  // fila y la media cuadren con lo que ve en pantalla.
+  // Comparativa con el ranking del usuario. La desviación se calcula "leave
+  // one out" (consensus sin su propio voto) para evitar el sesgo de
+  // auto-comparación, igual que en el panel de admin — aunque la lista de
+  // arriba siga pintando el consensus en vivo con todos los votos incluidos.
   const deviation =
-    consensus && myRanking ? computeDeviation(myRanking.positions, consensus.ranking) : null;
+    consensus && myRanking
+      ? computeDeviationLeaveOneOut(
+          myRanking.positions,
+          rankings.filter((r) => r.id !== myRanking.id).map((r) => r.positions),
+        )
+      : null;
   const diffByTeam = new Map<string, DeviationEntry>(
     deviation?.perTeam.map((e) => [e.teamAbbr, e]) ?? [],
   );
