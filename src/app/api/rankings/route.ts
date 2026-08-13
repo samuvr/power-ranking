@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { RankingSubmissionSchema } from "@/lib/schemas";
-import { getVotingById, upsertRanking } from "@/lib/db/client";
+import { getVoting, upsertRanking } from "@/lib/db/client";
 import { hasVoterAccess } from "@/lib/voting-access";
 import { isAdminAuthenticated } from "@/lib/auth";
 
@@ -28,19 +28,19 @@ export async function POST(req: Request) {
     throw err;
   }
 
-  const voting = await getVotingById(data.voting);
+  const voting = await getVoting();
   if (!voting || !voting.active) {
-    return NextResponse.json({ error: "Votación no encontrada" }, { status: 404 });
+    return NextResponse.json({ error: "Votación cerrada" }, { status: 404 });
   }
 
-  const isSuper = await isAdminAuthenticated();
+  const isAdmin = await isAdminAuthenticated();
   const isVoter = await hasVoterAccess(voting.id);
-  if (!isSuper && !isVoter) {
-    return NextResponse.json({ error: "Sin acceso a esta votación" }, { status: 401 });
+  if (!isAdmin && !isVoter) {
+    return NextResponse.json({ error: "Sin acceso a la votación" }, { status: 401 });
   }
 
   try {
-    const { id } = await upsertRanking(data);
+    const { id } = await upsertRanking({ ...data, voting: voting.id });
     return NextResponse.json({ id });
   } catch (err) {
     console.error("Failed to upsert ranking", err);

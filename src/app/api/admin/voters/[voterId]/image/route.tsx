@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import {
   getRankingById,
   getRankingsByVoting,
-  getVotingById,
+  getVoting,
 } from "@/lib/db/client";
 import { findTeamByAbbr, teamLogoUrl } from "@/data/teams";
 import {
@@ -11,7 +11,6 @@ import {
   type DeviationEntry,
 } from "@/lib/ranking-deviation";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { hasVotingAdminAccess } from "@/lib/voting-access";
 
 export const runtime = "nodejs";
 
@@ -93,19 +92,18 @@ function getOrigin(req: Request): string {
 
 export async function GET(req: Request, { params }: { params: Params }) {
   const { voterId } = await params;
+
+  if (!(await isAdminAuthenticated())) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const ranking = await getRankingById(voterId);
   if (!ranking) {
     return new Response("Not found", { status: 404 });
   }
 
-  const isSuper = await isAdminAuthenticated();
-  const isVotingAdmin = await hasVotingAdminAccess(ranking.voting);
-  if (!isSuper && !isVotingAdmin) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  const meta = await getVotingById(ranking.voting);
-  if (!meta) {
+  const meta = await getVoting();
+  if (!meta || meta.id !== ranking.voting) {
     return new Response("Voting not found", { status: 404 });
   }
 

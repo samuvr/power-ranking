@@ -111,7 +111,7 @@ export function AdminRankingView({
         </button>
       </div>
 
-      <ExportActions slug={voting.slug} totalRounds={totalRounds} />
+      <ExportActions fileSlug={voting.slug} totalRounds={totalRounds} />
 
       <label className="flex items-center gap-2 text-sm">
         <input
@@ -184,7 +184,7 @@ export function AdminRankingView({
                   </p>
                 </div>
                 <Link
-                  href={`/admin/${voting.slug}/votantes/${v.id}`}
+                  href={`/admin/votantes/${v.id}`}
                   className="font-subhead rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-[11px] uppercase tracking-wide transition hover:border-foreground"
                 >
                   Ver ranking
@@ -199,10 +199,11 @@ export function AdminRankingView({
 }
 
 function ExportActions({
-  slug,
+  fileSlug,
   totalRounds,
 }: {
-  slug: string;
+  // Solo se usa para nombrar los ficheros descargados.
+  fileSlug: string;
   totalRounds: number;
 }) {
   const [exportingStory, setExportingStory] = useState(false);
@@ -224,8 +225,8 @@ function ExportActions({
     setExportingStory(true);
     try {
       await downloadBlob(
-        `/api/admin/rankings/${slug}/story`,
-        `story-${slug}-ranking-global.png`,
+        "/api/admin/rankings/story",
+        `story-${fileSlug}-ranking-global.png`,
       );
     } finally {
       setExportingStory(false);
@@ -238,8 +239,8 @@ function ExportActions({
     try {
       for (let i = 0; i < totalRounds; i++) {
         await downloadBlob(
-          `/api/admin/rankings/${slug}/round/${i}`,
-          `carrusel-${slug}-fase-${i + 1}-de-${totalRounds}.png`,
+          `/api/admin/rankings/round/${i}`,
+          `carrusel-${fileSlug}-fase-${i + 1}-de-${totalRounds}.png`,
         );
         setCarouselProgress(i + 1);
         if (i < totalRounds - 1) {

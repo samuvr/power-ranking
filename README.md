@@ -1,8 +1,9 @@
 # Team Power Rankings
 
 Webapp para crear y compartir tu Power Ranking de los 32 equipos titulares de
-la NFL 2026, con votaciones independientes y panel de admin con el ranking
-global calculado mediante un algoritmo iterativo bottom-up.
+la NFL 2026, con una votación única (NFL Alicante) protegida por contraseña y
+panel de admin con el ranking global calculado mediante un algoritmo iterativo
+bottom-up.
 
 Este proyecto es un fork de [QBRankings](https://github.com/samuvr/qbrankings),
 adaptado para rankear equipos en lugar de quarterbacks.
@@ -12,7 +13,8 @@ adaptado para rankear equipos en lugar de quarterbacks.
 - Next.js 16 (App Router) + TypeScript + Tailwind CSS 4
 - Vercel Postgres (Neon) con `@vercel/postgres`
 - Generación de imagen con `next/og` (Satori)
-- Auth admin con cookie JWT (`jose`) + contraseña en `.env`
+- Auth admin con cookie JWT (`jose`) + `ADMIN_PASSWORD` en `.env`
+- Acceso de votantes con cookie JWT + contraseña hasheada (`bcryptjs`) en BD
 
 ## Variables de entorno
 
@@ -34,20 +36,26 @@ después de conectar la base de datos al proyecto.
 npm run dev          # arranca en http://localhost:3000
 npm run build        # build de producción
 npm run db:migrate   # crea las tablas votings + rankings (idempotente)
+                     # -- --purge-extra-votings borra votaciones antiguas
+                     #    sobrantes junto con sus rankings
 npm test             # tests del algoritmo (vitest)
 npm run lint         # eslint
 ```
 
 ## Flujo
 
-1. `/` — landing con nombre + email + selector visual de votación.
-2. `/vote/[voting]` — tap en un equipo para colocarlo, botones ↑/↓/✕ para
-   reordenar, autosave en `localStorage`.
-3. `POST /api/rankings` — upsert por `(email, voting)`.
-4. `/vote/[voting]/success?id=…` — muestra la imagen PNG generada por
+1. `/` — landing con nombre + email + contraseña de la votación. No hay que
+   elegir votación: solo existe NFL Alicante.
+2. `POST /api/voting/access` — valida la contraseña y deja la cookie de
+   votante.
+3. `/vote` — tap en un equipo para colocarlo, botones ↑/↓/✕ para reordenar,
+   autosave en `localStorage`.
+4. `POST /api/rankings` — upsert por `(email, voting)`.
+5. `/vote/success?id=…` — muestra la imagen PNG generada por
    `/api/rankings/[id]/image`.
-5. `/admin` — login. Tras auth, `/admin/[voting]` calcula y muestra el ranking
-   global. Solo accesible con la contraseña.
+6. `/admin` — login con `ADMIN_PASSWORD`; tras auth muestra el ranking global.
+   `/admin/ajustes` edita nombre, colores, logo, apertura de la votación y la
+   contraseña de votante.
 
 ## Datos de equipos
 

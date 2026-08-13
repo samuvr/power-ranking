@@ -2,48 +2,25 @@ import { randomBytes } from "node:crypto";
 import { sql } from "@vercel/postgres";
 import bcrypt from "bcryptjs";
 
-const NFL_ALICANTE_ID = "11111111-1111-1111-1111-111111111111";
-const EL_CAPOLOGIST_ID = "22222222-2222-2222-2222-222222222222";
+// La app solo tiene una votación: NFL Alicante.
+const VOTING_ID = "11111111-1111-1111-1111-111111111111";
+const VOTING_SLUG = "nfl-alicante";
+const LEGACY_VOTING_TYPE = "nfl_alicante";
 
-type SeedDescriptor = {
-  id: string;
-  legacy: string;
-  slug: string;
-  name: string;
-  shortName: string;
-  description: string;
-  accent: string;
-  accentDark: string;
-  logoUrl: string;
-  position: number;
+const SEED = {
+  id: VOTING_ID,
+  slug: VOTING_SLUG,
+  name: "NFL Alicante",
+  shortName: "NFLA",
+  description: "Comunidad NFL de Alicante",
+  accent: "#D81E2C",
+  accentDark: "#8C0F1A",
+  logoUrl: "/nfl-alicante.jpg",
 };
 
-const LEGACY_SEEDS: SeedDescriptor[] = [
-  {
-    id: NFL_ALICANTE_ID,
-    legacy: "nfl_alicante",
-    slug: "nfl-alicante",
-    name: "NFL Alicante",
-    shortName: "NFLA",
-    description: "Comunidad NFL de Alicante",
-    accent: "#D81E2C",
-    accentDark: "#8C0F1A",
-    logoUrl: "/nfl-alicante.jpg",
-    position: 0,
-  },
-  {
-    id: EL_CAPOLOGIST_ID,
-    legacy: "el_capologist",
-    slug: "el-capologist",
-    name: "El Capologist",
-    shortName: "CAPO",
-    description: "Análisis cap y rosters",
-    accent: "#1F7AE0",
-    accentDark: "#0F3F73",
-    logoUrl: "/capologist.jpg",
-    position: 1,
-  },
-];
+// `npm run db:migrate -- --purge-extra-votings` borra las votaciones sobrantes
+// junto con sus rankings. Sin el flag solo se borran las que no tienen votos.
+const PURGE_EXTRA = process.argv.includes("--purge-extra-votings");
 
 async function ensureVotingsTable() {
   await sql`
@@ -57,20 +34,22 @@ async function ensureVotingsTable() {
       accent_dark           TEXT NOT NULL,
       logo_url              TEXT NOT NULL,
       voter_password_hash   TEXT NOT NULL,
-      admin_password_hash   TEXT NOT NULL,
-      position              INT NOT NULL DEFAULT 0,
       active                BOOLEAN NOT NULL DEFAULT TRUE,
       public_access         BOOLEAN NOT NULL DEFAULT FALSE,
       created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `;
-  await sql`CREATE INDEX IF NOT EXISTS votings_position_idx ON votings (position);`;
-  // Migración idempotente: añadir columna en tablas existentes
+  // Migraciones idempotentes sobre tablas ya existentes.
   await sql`
     ALTER TABLE votings ADD COLUMN IF NOT EXISTS
       public_access BOOLEAN NOT NULL DEFAULT FALSE;
   `;
+  // Al existir una sola votación ya no hay ni orden ni admin por votación:
+  // el panel se protege solo con ADMIN_PASSWORD.
+  await sql`ALTER TABLE votings DROP COLUMN IF EXISTS position;`;
+  await sql`ALTER TABLE votings DROP COLUMN IF EXISTS admin_password_hash;`;
+  await sql`DROP INDEX IF EXISTS votings_position_idx;`;
 }
 
 async function ensureRankingsTable() {
@@ -109,34 +88,63 @@ async function rankingsVotingType(): Promise<string | null> {
   return row.data_type === "USER-DEFINED" ? row.udt_name : row.data_type;
 }
 
-async function votingsTableEmpty(): Promise<boolean> {
-  const r = await sql<{ count: string }>`SELECT COUNT(*)::text AS count FROM votings;`;
-  return r.rows[0].count === "0";
+// Crea la votación si no existe todavía. Devuelve la contraseña generada
+// (solo cuando se ha creado la fila) para que se pueda cambiar después.
+async function seedVoting(): Promise<string | null> {
+  const existing = await sql<{ count: string }>`
+    SELECT COUNT(*)::text AS count FROM votings WHERE id = ${SEED.id} OR slug = ${SEED.slug};
+  `;
+  if (existing.rows[0].count !== "0") return null;
+
+  const voterPwd = randomBytes(6).toString("hex");
+  const voterHash = await bcrypt.hash(voterPwd, 10);
+  await sql`
+    INSERT INTO votings
+      (id, slug, name, short_name, description, accent, accent_dark, logo_url,
+       voter_password_hash, active)
+    VALUES
+      (${SEED.id}, ${SEED.slug}, ${SEED.name}, ${SEED.shortName}, ${SEED.description},
+       ${SEED.accent}, ${SEED.accentDark}, ${SEED.logoUrl}, ${voterHash}, TRUE)
+    ON CONFLICT (id) DO NOTHING;
+  `;
+  return voterPwd;
 }
 
-async function seedLegacyVotings(): Promise<Array<{ name: string; placeholder: string }>> {
-  const generated: Array<{ name: string; placeholder: string }> = [];
-  for (const seed of LEGACY_SEEDS) {
-    const voterPwd = randomBytes(6).toString("hex");
-    const adminPwd = randomBytes(6).toString("hex");
-    const voterHash = await bcrypt.hash(voterPwd, 10);
-    const adminHash = await bcrypt.hash(adminPwd, 10);
-    await sql`
-      INSERT INTO votings
-        (id, slug, name, short_name, description, accent, accent_dark, logo_url,
-         voter_password_hash, admin_password_hash, position, active)
-      VALUES
-        (${seed.id}, ${seed.slug}, ${seed.name}, ${seed.shortName}, ${seed.description},
-         ${seed.accent}, ${seed.accentDark}, ${seed.logoUrl}, ${voterHash}, ${adminHash},
-         ${seed.position}, TRUE)
-      ON CONFLICT (id) DO NOTHING;
-    `;
-    generated.push({
-      name: seed.name,
-      placeholder: `voter=${voterPwd}  admin=${adminPwd}`,
-    });
+// Votación que conserva la app: la del slug canónico y, si no existe, la más
+// antigua. Mismo criterio que `getVoting()` en el cliente de BD.
+async function getKeeperVotingId(): Promise<string | null> {
+  const r = await sql<{ id: string }>`
+    SELECT id FROM votings
+    ORDER BY CASE WHEN slug = ${SEED.slug} THEN 0 ELSE 1 END, created_at ASC
+    LIMIT 1;
+  `;
+  return r.rows[0]?.id ?? null;
+}
+
+// Deja una única votación en la tabla. Las sobrantes sin rankings se borran
+// siempre; las que tienen votos solo con --purge-extra-votings.
+async function removeExtraVotings(keeperId: string) {
+  const extras = await sql<{ id: string; name: string; rankings: string }>`
+    SELECT v.id, v.name, COUNT(r.id)::text AS rankings
+    FROM votings v
+    LEFT JOIN rankings r ON r.voting = v.id
+    WHERE v.id <> ${keeperId}
+    GROUP BY v.id, v.name;
+  `;
+
+  for (const extra of extras.rows) {
+    const rankings = parseInt(extra.rankings, 10);
+    if (rankings > 0 && !PURGE_EXTRA) {
+      console.log(
+        `⚠️  La votación "${extra.name}" tiene ${rankings} rankings y no se ha borrado.\n` +
+          "    Ejecuta `npm run db:migrate -- --purge-extra-votings` para eliminarla con sus votos.",
+      );
+      continue;
+    }
+    await sql`DELETE FROM rankings WHERE voting = ${extra.id};`;
+    await sql`DELETE FROM votings WHERE id = ${extra.id};`;
+    console.log(`Votación sobrante eliminada: ${extra.name} (${rankings} rankings).`);
   }
-  return generated;
 }
 
 async function migrateLegacyRankings() {
@@ -144,12 +152,11 @@ async function migrateLegacyRankings() {
   await sql`ALTER TABLE rankings DROP CONSTRAINT IF EXISTS rankings_email_voting_key;`;
   await sql`DROP INDEX IF EXISTS rankings_voting_idx;`;
   await sql`ALTER TABLE rankings ADD COLUMN IF NOT EXISTS voting_id UUID;`;
-  for (const seed of LEGACY_SEEDS) {
-    await sql`
-      UPDATE rankings SET voting_id = ${seed.id}
-      WHERE voting_id IS NULL AND voting::text = ${seed.legacy};
-    `;
-  }
+  await sql`
+    UPDATE rankings SET voting_id = ${SEED.id}
+    WHERE voting_id IS NULL AND voting::text = ${LEGACY_VOTING_TYPE};
+  `;
+  // Los votos de votaciones que ya no existen se descartan.
   await sql`DELETE FROM rankings WHERE voting_id IS NULL;`;
   await sql`ALTER TABLE rankings ALTER COLUMN voting_id SET NOT NULL;`;
   await sql`
@@ -172,11 +179,7 @@ async function migrate() {
   const isLegacy = legacyVoting === "voting_type";
 
   await ensureVotingsTable();
-
-  let generated: Array<{ name: string; placeholder: string }> = [];
-  if (await votingsTableEmpty()) {
-    generated = await seedLegacyVotings();
-  }
+  const generatedPassword = await seedVoting();
 
   if (!hadRankings) {
     await ensureRankingsTable();
@@ -184,12 +187,15 @@ async function migrate() {
     await migrateLegacyRankings();
   }
 
+  const keeperId = await getKeeperVotingId();
+  if (keeperId) await removeExtraVotings(keeperId);
+
   console.log("Migrations complete.");
-  if (generated.length > 0) {
-    console.log("\n⚠️  Seeded legacy votings with placeholder passwords. CHANGE THEM:");
-    for (const g of generated) {
-      console.log(`  ${g.name}: ${g.placeholder}`);
-    }
+  if (generatedPassword) {
+    console.log(
+      `\n⚠️  Votación "${SEED.name}" creada con contraseña de votante provisional: ${generatedPassword}` +
+        "\n    Cámbiala en /admin/ajustes.",
+    );
   }
 }
 

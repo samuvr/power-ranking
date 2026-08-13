@@ -6,7 +6,7 @@ import { TeamMark } from "@/components/TeamMark";
 import type { VotingPublic } from "@/lib/db/client";
 import type { DeviationEntry, DeviationResult } from "@/lib/ranking-deviation";
 import { topOverratedUnderrated } from "@/lib/ranking-deviation";
-import { ShareActions } from "@/app/vote/[voting]/success/ShareActions";
+import { ShareActions } from "@/app/vote/success/ShareActions";
 
 type Voter = {
   id: string;
@@ -62,7 +62,7 @@ export function VoterRankingView({ voting, voter, deviation }: Props) {
           </p>
         </div>
         <Link
-          href={`/admin/${voting.slug}`}
+          href="/admin"
           className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
         >
           ← Volver

@@ -15,7 +15,6 @@ function toTitleCase(s: string): string {
 export const RankingSubmissionSchema = z.object({
   fullName: z.string().trim().min(2).max(30).transform(toTitleCase),
   email: z.string().trim().toLowerCase().email().max(200),
-  voting: z.guid(),
   positions: z
     .array(z.string())
     .length(TOTAL_TEAMS)
@@ -33,45 +32,27 @@ export const AdminLoginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
-const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
-export const VotingCreateSchema = z.object({
-  slug: z.string().trim().min(2).max(40).regex(SLUG_RE, {
-    message: "slug must be lowercase alphanumeric with hyphens",
-  }),
-  name: z.string().trim().min(2).max(60),
-  shortName: z.string().trim().min(2).max(8),
-  description: z.string().trim().min(2).max(140),
-  accent: z.string().regex(HEX_COLOR_RE, { message: "accent must be #RRGGBB" }),
-  accentDark: z.string().regex(HEX_COLOR_RE, { message: "accentDark must be #RRGGBB" }),
-  logoUrl: z.string().trim().min(1).max(500),
-  publicAccess: z.boolean().optional().default(false),
-  voterPassword: z.string().min(4).max(100).optional(),
-  adminPassword: z.string().min(4).max(100),
-});
-
-export type VotingCreateInput = z.infer<typeof VotingCreateSchema>;
-
-export const VotingUpdateSchema = VotingCreateSchema.partial().extend({
+// Ajustes editables de la (única) votación. Todo opcional: el PATCH aplica
+// solo los campos presentes.
+export const VotingUpdateSchema = z.object({
+  name: z.string().trim().min(2).max(60).optional(),
+  shortName: z.string().trim().min(2).max(8).optional(),
+  description: z.string().trim().min(2).max(140).optional(),
+  accent: z.string().regex(HEX_COLOR_RE, { message: "accent must be #RRGGBB" }).optional(),
+  accentDark: z
+    .string()
+    .regex(HEX_COLOR_RE, { message: "accentDark must be #RRGGBB" })
+    .optional(),
+  logoUrl: z.string().trim().min(1).max(500).optional(),
   active: z.boolean().optional(),
   publicAccess: z.boolean().optional(),
+  voterPassword: z.string().min(4).max(100).optional(),
 });
 
 export type VotingUpdateInput = z.infer<typeof VotingUpdateSchema>;
 
-export const VotingReorderSchema = z.object({
-  orderedIds: z.array(z.guid()).min(1).max(64),
-});
-
-export const DuplicateRankingsSchema = z.object({
-  targetVotingId: z.guid(),
-});
-
 export const VotingAccessSchema = z.object({
   password: z.string().max(200).optional(),
-});
-
-export const PasswordRequiredSchema = z.object({
-  password: z.string().min(1).max(200),
 });

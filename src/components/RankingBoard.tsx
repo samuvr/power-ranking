@@ -26,7 +26,6 @@ export function RankingBoard({ voting }: Props) {
   const allTeams = useMemo(() => getAllTeams(), []);
   const votingMeta = voting;
   const votingId = voting.id;
-  const votingSlug = voting.slug;
 
   const [positions, setPositions] = useState<(string | null)[]>(
     () => Array.from({ length: TOTAL_TEAMS }, () => null),
@@ -131,7 +130,6 @@ export function RankingBoard({ voting }: Props) {
         body: JSON.stringify({
           fullName: fullName.trim(),
           email: email.trim(),
-          voting: votingId,
           positions: positions as string[],
         }),
       });
@@ -146,13 +144,13 @@ export function RankingBoard({ voting }: Props) {
       } catch {
         // ignore
       }
-      router.push(`/vote/${votingSlug}/success?id=${data.id}`);
+      router.push(`/vote/success?id=${data.id}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error enviando ranking";
       setError(msg);
       setSubmitting(false);
     }
-  }, [complete, email, fullName, positions, router, votingId, votingSlug]);
+  }, [complete, email, fullName, positions, router, votingId]);
 
   return (
     <div className="flex min-h-screen flex-col">

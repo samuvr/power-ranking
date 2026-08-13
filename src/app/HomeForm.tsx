@@ -2,17 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { VotingSelector } from "@/components/VotingSelector";
-import type { VotingPublic } from "@/lib/db/client";
 
-type Props = { votings: VotingPublic[] };
+type Props = { publicAccess: boolean };
 
-export function HomeForm({ votings }: Props) {
+export function HomeForm({ publicAccess }: Props) {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [votingId, setVotingId] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -28,7 +27,7 @@ export function HomeForm({ votings }: Props) {
     }
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (fullName.trim().length < 2) {
@@ -39,20 +38,36 @@ export function HomeForm({ votings }: Props) {
       setError("Introduce un email válido");
       return;
     }
-    const voting = votings.find((v) => v.id === votingId);
-    if (!voting) {
-      setError("Elige una votación");
+    if (!publicAccess && !password) {
+      setError("Introduce la contraseña de la votación");
       return;
     }
+
+    setBusy(true);
     try {
-      sessionStorage.setItem(
-        "tpr:user",
-        JSON.stringify({ fullName: fullName.trim(), email: email.trim() }),
-      );
-    } catch {
-      // ignore
+      const res = await fetch("/api/voting/access", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(publicAccess ? {} : { password }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? `Error ${res.status}`);
+      }
+      try {
+        sessionStorage.setItem(
+          "tpr:user",
+          JSON.stringify({ fullName: fullName.trim(), email: email.trim() }),
+        );
+      } catch {
+        // ignore
+      }
+      router.push("/vote");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error");
+      setBusy(false);
     }
-    router.push(`/vote/${voting.slug}`);
   };
 
   return (
@@ -92,12 +107,22 @@ export function HomeForm({ votings }: Props) {
         />
       </label>
 
-      <div>
-        <span className="font-subhead mb-2 block text-[11px] uppercase tracking-wide text-muted">
-          Votación
-        </span>
-        <VotingSelector value={votingId} onChange={setVotingId} votings={votings} />
-      </div>
+      {!publicAccess && (
+        <label className="block">
+          <span className="font-subhead mb-1 block text-[11px] uppercase tracking-wide text-muted">
+            Contraseña
+          </span>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-base outline-none transition focus:border-foreground"
+            placeholder="Contraseña de la votación"
+            autoComplete="current-password"
+            required
+          />
+        </label>
+      )}
 
       {error && (
         <p className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent">
@@ -107,9 +132,10 @@ export function HomeForm({ votings }: Props) {
 
       <button
         type="submit"
-        className="font-subhead mt-2 rounded-xl bg-accent px-4 py-3 text-base uppercase tracking-wide text-white transition active:scale-[0.98] hover:bg-accent-dark"
+        disabled={busy}
+        className="font-subhead mt-2 rounded-xl bg-accent px-4 py-3 text-base uppercase tracking-wide text-white transition active:scale-[0.98] hover:bg-accent-dark disabled:opacity-50"
       >
-        Empezar ranking
+        {busy ? "Entrando…" : "Empezar ranking"}
       </button>
     </form>
   );

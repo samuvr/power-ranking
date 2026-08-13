@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 const SALT_ROUNDS = 10;
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12; // 12h
 
-export type VotingRole = "voter" | "voting_admin";
+export type VotingRole = "voter";
 
 function getSecretKey(): Uint8Array {
   const secret = process.env.SESSION_SECRET;
@@ -26,10 +26,6 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
 
 export function voterCookieName(votingId: string): string {
   return `voter_access_${votingId}`;
-}
-
-export function votingAdminCookieName(votingId: string): string {
-  return `voting_admin_${votingId}`;
 }
 
 async function signToken(votingId: string, role: VotingRole): Promise<string> {
@@ -68,30 +64,7 @@ export async function setVoterCookie(votingId: string): Promise<void> {
   });
 }
 
-export async function setVotingAdminCookie(votingId: string): Promise<void> {
-  const token = await signToken(votingId, "voting_admin");
-  const store = await cookies();
-  store.set({
-    name: votingAdminCookieName(votingId),
-    value: token,
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: COOKIE_MAX_AGE_SECONDS,
-  });
-}
-
 export async function hasVoterAccess(votingId: string): Promise<boolean> {
   const store = await cookies();
   return verifyToken(store.get(voterCookieName(votingId))?.value, votingId, "voter");
-}
-
-export async function hasVotingAdminAccess(votingId: string): Promise<boolean> {
-  const store = await cookies();
-  return verifyToken(
-    store.get(votingAdminCookieName(votingId))?.value,
-    votingId,
-    "voting_admin",
-  );
 }

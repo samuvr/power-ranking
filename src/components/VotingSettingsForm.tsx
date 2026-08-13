@@ -4,78 +4,46 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { VotingPublic } from "@/lib/db/client";
 
-type Props =
-  | { mode: "create"; voting?: undefined }
-  | { mode: "edit"; voting: VotingPublic };
+type Props = { voting: VotingPublic };
 
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-}
-
-export function VotingForm(props: Props) {
+// Ajustes de la única votación de la app: identidad visual, acceso de
+// votantes y contraseña. No permite crear ni borrar votaciones.
+export function VotingSettingsForm({ voting }: Props) {
   const router = useRouter();
-  const initial = props.mode === "edit" ? props.voting : null;
 
-  const [name, setName] = useState(initial?.name ?? "");
-  const [slug, setSlug] = useState(initial?.slug ?? "");
-  const [slugDirty, setSlugDirty] = useState(false);
-  const [shortName, setShortName] = useState(initial?.short_name ?? "");
-  const [description, setDescription] = useState(initial?.description ?? "");
-  const [accent, setAccent] = useState(initial?.accent ?? "#D81E2C");
-  const [accentDark, setAccentDark] = useState(initial?.accent_dark ?? "#8C0F1A");
-  const [logoUrl, setLogoUrl] = useState(initial?.logo_url ?? "");
+  const [name, setName] = useState(voting.name);
+  const [shortName, setShortName] = useState(voting.short_name);
+  const [description, setDescription] = useState(voting.description);
+  const [accent, setAccent] = useState(voting.accent);
+  const [accentDark, setAccentDark] = useState(voting.accent_dark);
+  const [logoUrl, setLogoUrl] = useState(voting.logo_url);
   const [voterPassword, setVoterPassword] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-  const [active, setActive] = useState(initial?.active ?? true);
-  const [publicAccess, setPublicAccess] = useState(initial?.public_access ?? false);
+  const [active, setActive] = useState(voting.active);
+  const [publicAccess, setPublicAccess] = useState(voting.public_access);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const handleNameChange = (v: string) => {
-    setName(v);
-    if (!slugDirty) setSlug(slugify(v));
-  };
+  const [saved, setSaved] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSaved(false);
     setBusy(true);
     try {
       const body: Record<string, unknown> = {
         name: name.trim(),
-        slug: slug.trim(),
         shortName: shortName.trim(),
         description: description.trim(),
         accent,
         accentDark,
         logoUrl: logoUrl.trim(),
+        active,
         publicAccess,
       };
       if (voterPassword) body.voterPassword = voterPassword;
-      if (adminPassword) body.adminPassword = adminPassword;
-      if (props.mode === "edit") body.active = active;
 
-      if (props.mode === "create") {
-        if (!publicAccess && !voterPassword) {
-          throw new Error("La contraseña de votante es obligatoria en votaciones no públicas");
-        }
-        if (!adminPassword) {
-          throw new Error("La contraseña de administrador es obligatoria al crear");
-        }
-      }
-
-      const url = props.mode === "create"
-        ? "/api/admin/votings"
-        : `/api/admin/votings/${props.voting.id}`;
-      const method = props.mode === "create" ? "POST" : "PATCH";
-      const res = await fetch(url, {
-        method,
+      const res = await fetch("/api/admin/voting", {
+        method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -83,10 +51,12 @@ export function VotingForm(props: Props) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error ?? `Error ${res.status}`);
       }
-      router.push("/admin");
+      setVoterPassword("");
+      setSaved(true);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
+    } finally {
       setBusy(false);
     }
   };
@@ -97,31 +67,16 @@ export function VotingForm(props: Props) {
         <input
           type="text"
           value={name}
-          onChange={(e) => handleNameChange(e.target.value)}
+          onChange={(e) => setName(e.target.value)}
           maxLength={60}
+          minLength={2}
           required
           className={inputCls}
-          placeholder="Mi Votación 2026"
+          placeholder="NFL Alicante"
         />
       </Field>
 
-      <Field label="Slug (URL)" hint={`/vote/${slug || "..."}`}>
-        <input
-          type="text"
-          value={slug}
-          onChange={(e) => {
-            setSlug(e.target.value.toLowerCase());
-            setSlugDirty(true);
-          }}
-          maxLength={40}
-          required
-          pattern="[a-z0-9][a-z0-9-]*[a-z0-9]"
-          className={inputCls}
-          placeholder="mi-votacion-2026"
-        />
-      </Field>
-
-      <Field label="Abreviatura (3-5 chars)">
+      <Field label="Abreviatura (2-8 chars)">
         <input
           type="text"
           value={shortName}
@@ -130,7 +85,7 @@ export function VotingForm(props: Props) {
           minLength={2}
           required
           className={inputCls}
-          placeholder="MV26"
+          placeholder="NFLA"
         />
       </Field>
 
@@ -140,9 +95,10 @@ export function VotingForm(props: Props) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={140}
+          minLength={2}
           required
           className={inputCls}
-          placeholder="Comunidad / podcast / liga…"
+          placeholder="Comunidad NFL de Alicante"
         />
       </Field>
 
@@ -173,9 +129,18 @@ export function VotingForm(props: Props) {
           maxLength={500}
           required
           className={inputCls}
-          placeholder="/logo.png o https://example.com/logo.png"
+          placeholder="/nfl-alicante.jpg o https://example.com/logo.png"
         />
       </Field>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={active}
+          onChange={(e) => setActive(e.target.checked)}
+        />
+        Votación abierta (se puede votar)
+      </label>
 
       <label className="flex items-center gap-2 text-sm">
         <input
@@ -187,16 +152,12 @@ export function VotingForm(props: Props) {
       </label>
 
       {!publicAccess && (
-        <Field
-          label="Contraseña de votante"
-          hint={props.mode === "edit" ? "Déjala vacía para no cambiarla" : undefined}
-        >
+        <Field label="Contraseña de votante" hint="Déjala vacía para no cambiarla">
           <input
             type="text"
             value={voterPassword}
             onChange={(e) => setVoterPassword(e.target.value)}
-            minLength={props.mode === "create" ? 4 : 0}
-            required={props.mode === "create" && !publicAccess}
+            minLength={4}
             className={inputCls}
             placeholder="••••••••"
             autoComplete="off"
@@ -204,36 +165,14 @@ export function VotingForm(props: Props) {
         </Field>
       )}
 
-      <Field
-        label="Contraseña de admin de votación"
-        hint={props.mode === "edit" ? "Déjala vacía para no cambiarla" : undefined}
-      >
-        <input
-          type="text"
-          value={adminPassword}
-          onChange={(e) => setAdminPassword(e.target.value)}
-          minLength={props.mode === "create" ? 4 : 0}
-          required={props.mode === "create"}
-          className={inputCls}
-          placeholder="••••••••"
-          autoComplete="off"
-        />
-      </Field>
-
-      {props.mode === "edit" && (
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={active}
-            onChange={(e) => setActive(e.target.checked)}
-          />
-          Activa (visible en la home)
-        </label>
-      )}
-
       {error && (
         <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
           {error}
+        </p>
+      )}
+      {saved && !error && (
+        <p className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted">
+          Ajustes guardados.
         </p>
       )}
 
@@ -243,14 +182,14 @@ export function VotingForm(props: Props) {
           disabled={busy}
           className="flex-1 rounded-xl bg-foreground px-4 py-3 text-base font-bold text-background transition disabled:opacity-50"
         >
-          {busy ? "Guardando…" : props.mode === "create" ? "Crear votación" : "Guardar cambios"}
+          {busy ? "Guardando…" : "Guardar cambios"}
         </button>
         <button
           type="button"
           onClick={() => router.push("/admin")}
           className="rounded-xl border border-border px-4 py-3 text-sm font-semibold hover:border-muted"
         >
-          Cancelar
+          Volver
         </button>
       </div>
     </form>
