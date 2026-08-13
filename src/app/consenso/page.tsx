@@ -14,7 +14,7 @@ import {
   computeDeviationLeaveOneOut,
 } from "@/lib/ranking-deviation";
 import { computeEvolution } from "@/lib/ranking-evolution";
-import { ConsensusComparison } from "@/components/ConsensusComparison";
+import { RankingComparison } from "@/components/RankingComparison";
 
 export const dynamic = "force-dynamic";
 
@@ -119,14 +119,19 @@ export default async function ConsensoPage() {
             .
           </p>
 
-          <ConsensusComparison
-            consensusPositions={consensusPositions}
+          <RankingComparison
+            positions={consensusPositions}
+            reference={{
+              title: "Consensus",
+              name: "Consensus",
+              de: "del consensus",
+              a: "al consensus",
+            }}
             deltaByTeam={deltaByTeam}
             since={latestSnapshot?.name ?? null}
             deviation={deviation}
             meanDeviation={meanDeviationLeaveOneOut}
             accent={voting.accent}
-            subject={{ self: true, name: user?.full_name ?? "" }}
           />
 
           {user && !myRanking && (

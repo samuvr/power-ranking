@@ -1,26 +1,22 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import {
-  getLatestSnapshot,
-  getPreviousSnapshot,
+  getPreviousSnapshotEntryByEmail,
   getRankingByUser,
-  getRankingsByVoting,
   getSnapshotById,
   getSnapshotEntriesByUser,
+  getSnapshotEntryByUser,
   getUserById,
   getVoting,
 } from "@/lib/db/client";
 import { getCurrentUser } from "@/lib/user-auth";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import {
-  computeDeviation,
-  computeDeviationLeaveOneOut,
   computeDeviationVsPositions,
   type DeviationResult,
 } from "@/lib/ranking-deviation";
 import { computeEvolution } from "@/lib/ranking-evolution";
-import { ConsensusComparison } from "@/components/ConsensusComparison";
+import { RankingComparison } from "@/components/RankingComparison";
 
 export const dynamic = "force-dynamic";
 
@@ -33,16 +29,19 @@ const dateFmt = new Intl.DateTimeFormat("es-ES", {
 type Params = Promise<{ userId: string }>;
 type Search = Promise<{ snapshot?: string | string[] }>;
 
-/** Primer nombre, que es con el que se etiquetan los puestos en la lista. */
+/** Primer nombre, que es con el que se etiqueta el ranking en la comparativa. */
 function shortName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] || fullName;
 }
 
 /**
- * Ranking de otro usuario enfrentado al consensus, con la misma información
- * que `/consenso`: o su último ranking guardado contra el consensus en vivo,
- * o el que dejó congelado en un screenshot contra el consensus de ese
- * screenshot (`?snapshot=<id>`).
+ * Ranking de otro usuario con la misma información que `/consenso`, pero con
+ * los papeles cambiados: la lista es SU ranking y la comparativa (desviación
+ * media, clavados, mayor distancia, dónde crees más o menos que él y los
+ * puestos al lado de cada equipo) es contra el ranking de quien mira.
+ *
+ * Sin `?snapshot` se enfrentan los rankings vigentes de los dos; con él, los
+ * que ambos dejaron congelados en ese screenshot.
  */
 export default async function UsuarioPage({
   params,
@@ -71,75 +70,91 @@ export default async function UsuarioPage({
   const isSelf = viewer?.id === target.id;
 
   // Lo que cambia entre "último guardado" y un screenshot concreto.
-  let consensusPositions: string[] = [];
+  let positions: string[] = [];
   let deltaByTeam = new Map<string, number | null>();
   let since: string | null = null;
-  let deviation: DeviationResult | null = null;
-  let meanDeviation: number | null = null;
+  /** Ranking de quien mira, con el que se compara el de arriba. */
+  let minePositions: string[] | null = null;
+  let eyebrow: string;
   let subtitle: string;
   let imageUrl: string | null = null;
-  /** Aviso cuando no hay nada que comparar. */
-  let emptyNote: string | null = null;
+  /** Aviso cuando no hay comparación posible. */
+  let note: string | null = null;
 
   if (snapshotId) {
     const entry = entries.find((e) => e.snapshot_id === snapshotId);
     const snapshot = entry ? await getSnapshotById(snapshotId) : null;
     if (!entry || !snapshot || snapshot.voting !== voting.id) notFound();
 
-    const previous = await getPreviousSnapshot(voting.id, snapshot.created_at);
-    consensusPositions = snapshot.consensus;
+    // Flechas: cómo movió SUS equipos respecto al screenshot anterior en el
+    // que participó. La comparación es contra tu ranking de esa misma foto.
+    const [previous, myEntry] = await Promise.all([
+      getPreviousSnapshotEntryByEmail(entry.email, voting.id, snapshot.created_at),
+      viewer ? getSnapshotEntryByUser(snapshot.id, viewer.id) : Promise.resolve(null),
+    ]);
+
+    positions = entry.positions;
     deltaByTeam = new Map(
-      computeEvolution(snapshot.consensus, previous?.consensus ?? null).map((e) => [
+      computeEvolution(entry.positions, previous?.positions ?? null).map((e) => [
         e.teamAbbr,
         e.delta,
       ]),
     );
-    since = previous?.name ?? null;
-    deviation = computeDeviationVsPositions(entry.positions, snapshot.consensus);
+    since = previous?.snapshot_name ?? null;
+    minePositions = isSelf ? null : (myEntry?.positions ?? null);
+    eyebrow = "Ranking congelado";
     subtitle = `${snapshot.name} · congelado el ${dateFmt.format(
       new Date(snapshot.created_at),
     )}`;
     imageUrl = `/api/snapshots/${snapshot.id}/entries/${entry.id}/image`;
+
+    if (isSelf) {
+      note = `Este es tu propio ranking en ${snapshot.name}.`;
+    } else if (!viewer) {
+      note = "Estás como admin, sin ranking propio con el que comparar.";
+    } else if (!myEntry) {
+      note = `No apareces en ${snapshot.name}, así que no hay nada con lo que comparar su ranking.`;
+    }
   } else {
-    const [rankings, latestSnapshot, targetRanking] = await Promise.all([
-      getRankingsByVoting(voting.id),
-      getLatestSnapshot(voting.id),
+    const [targetRanking, myRanking] = await Promise.all([
       getRankingByUser(target.id, voting.id),
+      viewer && viewer.id !== target.id
+        ? getRankingByUser(viewer.id, voting.id)
+        : Promise.resolve(null),
     ]);
 
-    const consensus =
-      rankings.length > 0 ? computeGlobalRanking(rankings.map((r) => r.positions)) : null;
-    consensusPositions = consensus?.ranking.map((e) => e.teamAbbr) ?? [];
+    // Flechas: su evolución desde el último screenshot en el que aparece.
+    const lastEntry = entries[0] ?? null;
+    positions = targetRanking?.positions ?? [];
     deltaByTeam = new Map(
-      computeEvolution(consensusPositions, latestSnapshot?.consensus ?? null).map((e) => [
+      computeEvolution(positions, lastEntry?.positions ?? null).map((e) => [
         e.teamAbbr,
         e.delta,
       ]),
     );
-    since = latestSnapshot?.name ?? null;
-
-    if (consensus && targetRanking) {
-      deviation = computeDeviation(targetRanking.positions, consensus.ranking);
-      // Igual que en /consenso, la desviación media va "leave one out": el
-      // consensus de referencia se calcula sin el voto de este usuario.
-      meanDeviation = computeDeviationLeaveOneOut(
-        targetRanking.positions,
-        rankings.filter((r) => r.id !== targetRanking.id).map((r) => r.positions),
-      ).meanAbsDeviation;
-      imageUrl = `/api/rankings/${targetRanking.id}/image`;
-    }
-
+    since = lastEntry?.snapshot_name ?? null;
+    minePositions = myRanking?.positions ?? null;
+    eyebrow = "Ranking en vivo";
     subtitle = targetRanking
       ? `Último ranking guardado el ${dateFmt.format(new Date(targetRanking.updated_at))}`
       : "Todavía sin ranking guardado";
+    if (targetRanking) imageUrl = `/api/rankings/${targetRanking.id}/image`;
 
-    if (consensus === null) {
-      emptyNote =
-        "Todavía no hay ningún ranking guardado, así que aún no se puede calcular el consensus.";
-    } else if (!targetRanking) {
-      emptyNote = `${target.full_name} todavía no ha guardado ningún ranking, así que abajo solo está el consensus en vivo.`;
+    if (!targetRanking) {
+      note = `${target.full_name} todavía no ha guardado ningún ranking.`;
+    } else if (isSelf) {
+      note = "Este es tu propio ranking, tal y como lo tienes guardado.";
+    } else if (!viewer) {
+      note = "Estás como admin, sin ranking propio con el que comparar.";
+    } else if (!myRanking) {
+      note = `Guarda tu ranking para compararlo con el de ${name}.`;
     }
   }
+
+  const deviation: DeviationResult | null =
+    minePositions && positions.length > 0
+      ? computeDeviationVsPositions(minePositions, positions)
+      : null;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-8">
@@ -149,7 +164,7 @@ export default async function UsuarioPage({
             className="font-subhead text-xs uppercase tracking-[0.25em]"
             style={{ color: voting.accent }}
           >
-            {snapshotId ? "Ranking congelado" : "Consensus en vivo"}
+            {eyebrow}
           </p>
           <h1 className="font-display text-4xl uppercase leading-tight">
             {target.full_name}
@@ -190,9 +205,19 @@ export default async function UsuarioPage({
         )}
       </nav>
 
-      {emptyNote && (
+      {note && (
         <p className="mb-4 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
-          {emptyNote}
+          {note}
+          {isSelf && !snapshotId && (
+            <>
+              {" "}
+              Para compararlo con el consensus, pásate por{" "}
+              <Link href="/consenso" className="underline hover:text-foreground">
+                Ver Consensus
+              </Link>
+              .
+            </>
+          )}
         </p>
       )}
 
@@ -207,15 +232,19 @@ export default async function UsuarioPage({
         </a>
       )}
 
-      {consensusPositions.length > 0 && (
-        <ConsensusComparison
-          consensusPositions={consensusPositions}
+      {positions.length > 0 && (
+        <RankingComparison
+          positions={positions}
+          reference={{
+            title: `Ranking de ${name}`,
+            name,
+            de: `de ${name}`,
+            a: `a ${name}`,
+          }}
           deltaByTeam={deltaByTeam}
           since={since}
           deviation={deviation}
-          meanDeviation={meanDeviation}
           accent={voting.accent}
-          subject={{ self: isSelf, name }}
         />
       )}
 
