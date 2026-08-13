@@ -10,6 +10,7 @@ export const config = {
     "/consenso",
     "/historico/:path*",
     "/equipos/:path*",
+    "/usuarios/:path*",
     "/perfil",
     "/admin/:path*",
     "/api/admin/:path*",
@@ -59,6 +60,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/consenso" ||
     pathname.startsWith("/historico") ||
     pathname.startsWith("/equipos") ||
+    pathname.startsWith("/usuarios") ||
     pathname === "/perfil"
   ) {
     if (await hasRole(request, USER_COOKIE_NAME, "user")) return NextResponse.next();
