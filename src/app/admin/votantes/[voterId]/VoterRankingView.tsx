@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { findTeamByAbbr } from "@/data/teams";
 import { TeamMark } from "@/components/TeamMark";
+import { EvolutionBadge } from "@/components/EvolutionBadge";
 import type { VotingPublic } from "@/lib/db/client";
 import type { DeviationEntry, DeviationResult } from "@/lib/ranking-deviation";
 import { topOverratedUnderrated } from "@/lib/ranking-deviation";
@@ -20,15 +21,27 @@ type Props = {
   voting: VotingPublic;
   voter: Voter;
   deviation: DeviationResult;
+  /** Puestos ganados por equipo desde el último screenshot del votante. */
+  deltas: Record<string, number | null>;
+  since: string | null;
+  baseSnapshotId: string | null;
 };
 
-export function VoterRankingView({ voting, voter, deviation }: Props) {
+export function VoterRankingView({
+  voting,
+  voter,
+  deviation,
+  deltas,
+  since,
+  baseSnapshotId,
+}: Props) {
   const diffByTeam = new Map<string, DeviationEntry>();
   for (const entry of deviation.perTeam) diffByTeam.set(entry.teamAbbr, entry);
 
   const { overrated, underrated } = topOverratedUnderrated(deviation.perTeam, 3);
 
-  const version = new Date(voter.updatedAt).getTime();
+  // La imagen cambia al reenviar el ranking y al crear un screenshot nuevo.
+  const version = `${new Date(voter.updatedAt).getTime()}-${baseSnapshotId ?? "0"}`;
   const imageUrl = `/api/admin/voters/${voter.id}/image?v=${version}`;
 
   return (
@@ -59,6 +72,7 @@ export function VoterRankingView({ voting, voter, deviation }: Props) {
                 maximumFractionDigits: 2,
               })}
             </span>
+            {since && ` · evolución vs ${since}`}
           </p>
         </div>
         <Link
@@ -89,6 +103,11 @@ export function VoterRankingView({ voting, voter, deviation }: Props) {
                 </p>
                 <p className="text-xs text-muted">{team?.abbr}</p>
               </div>
+              <EvolutionBadge
+                delta={deltas[teamAbbr] ?? null}
+                since={since ?? undefined}
+                size="sm"
+              />
               <DiffBadge diff={diff} hasConsensus={entry !== undefined} />
             </li>
           );

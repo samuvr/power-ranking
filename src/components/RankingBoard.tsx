@@ -2,81 +2,141 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { getAllTeams, findTeamByAbbr, TOTAL_TEAMS, type Team } from "@/data/teams";
 import type { VotingPublic } from "@/lib/db/client";
+import { computeEvolution, evolutionByTeam } from "@/lib/ranking-evolution";
 import { TeamCard } from "./TeamCard";
 import { RankingSlot } from "./RankingSlot";
 import { VotingLogo } from "./VotingLogo";
+import { TeamMark } from "./TeamMark";
 
 type Tab = "pool" | "ranking";
 
-type StoredProgress = {
-  fullName: string;
-  email: string;
+type StoredDraft = {
+  savedAt: number;
   positions: (string | null)[];
 };
 
-const storageKey = (votingId: string) => `tpr:progress:${votingId}`;
-const userDataKey = "tpr:user";
+const draftKey = (userId: string) => `tpr:draft:${userId}`;
+const EMPTY_ID_PREFIX = "__empty__";
 
-type Props = { voting: VotingPublic };
+type Props = {
+  voting: VotingPublic;
+  user: { id: string; fullName: string };
+  /** Ranking guardado (o huecos vacíos si aún no hay ninguno). */
+  initialPositions: (string | null)[];
+  /** Momento del último guardado, para saber si el borrador local es más nuevo. */
+  savedAt: string | null;
+  /** Puestos del usuario en el último screenshot en el que aparece. */
+  previousPositions: string[] | null;
+  previousLabel: string | null;
+  /** Screenshot desde el que no actualiza (null si ya está al día). */
+  staleSince: string | null;
+  votingActive: boolean;
+};
 
-export function RankingBoard({ voting }: Props) {
+export function RankingBoard({
+  voting,
+  user,
+  initialPositions,
+  savedAt,
+  previousPositions,
+  previousLabel,
+  staleSince,
+  votingActive,
+}: Props) {
   const router = useRouter();
   const allTeams = useMemo(() => getAllTeams(), []);
   const votingMeta = voting;
-  const votingId = voting.id;
 
-  const [positions, setPositions] = useState<(string | null)[]>(
-    () => Array.from({ length: TOTAL_TEAMS }, () => null),
+  const [positions, setPositions] = useState<(string | null)[]>(initialPositions);
+  const [tab, setTab] = useState<Tab>(
+    initialPositions.some((p) => p === null) ? "pool" : "ranking",
   );
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [tab, setTab] = useState<Tab>("pool");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [dragging, setDragging] = useState<string | null>(null);
 
-  // Hydrate from sessionStorage (user data) + localStorage (progress)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // Un borrador local solo gana si es posterior al último guardado en servidor.
   useEffect(() => {
     try {
-      const user = sessionStorage.getItem(userDataKey);
-      if (user) {
-        const parsed = JSON.parse(user) as { fullName?: string; email?: string };
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (parsed.fullName) setFullName(parsed.fullName);
-        if (parsed.email) setEmail(parsed.email);
-      }
-      const stored = localStorage.getItem(storageKey(votingId));
-      if (stored) {
-        const parsed = JSON.parse(stored) as StoredProgress;
-        if (Array.isArray(parsed.positions) && parsed.positions.length === TOTAL_TEAMS) {
-          setPositions(parsed.positions);
+      const raw = localStorage.getItem(draftKey(user.id));
+      if (raw) {
+        const draft = JSON.parse(raw) as StoredDraft;
+        const serverAt = savedAt ? new Date(savedAt).getTime() : 0;
+        if (
+          Array.isArray(draft.positions) &&
+          draft.positions.length === TOTAL_TEAMS &&
+          draft.savedAt > serverAt
+        ) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setPositions(draft.positions);
         }
-        if (parsed.fullName) setFullName((cur) => cur || parsed.fullName);
-        if (parsed.email) setEmail((cur) => cur || parsed.email);
       }
     } catch {
       // ignore corrupted storage
     }
     setHydrated(true);
-  }, [votingId]);
+  }, [user.id, savedAt]);
 
-  // Persist progress
   useEffect(() => {
     if (!hydrated) return;
     try {
-      const payload: StoredProgress = { fullName, email, positions };
-      localStorage.setItem(storageKey(votingId), JSON.stringify(payload));
+      const draft: StoredDraft = { savedAt: Date.now(), positions };
+      localStorage.setItem(draftKey(user.id), JSON.stringify(draft));
     } catch {
       // ignore quota errors
     }
-  }, [votingId, positions, fullName, email, hydrated]);
+  }, [positions, user.id, hydrated]);
 
-  const placedSet = useMemo(() => new Set(positions.filter((v): v is string => !!v)), [positions]);
-  const pool = useMemo(() => allTeams.filter((t) => !placedSet.has(t.abbr)), [allTeams, placedSet]);
-  const placedCount = positions.length - pool.length;
+  const placedSet = useMemo(
+    () => new Set(positions.filter((v): v is string => !!v)),
+    [positions],
+  );
+  const pool = useMemo(
+    () => allTeams.filter((t) => !placedSet.has(t.abbr)),
+    [allTeams, placedSet],
+  );
+  const placedCount = placedSet.size;
   const complete = placedCount === TOTAL_TEAMS;
+
+  // Evolución en vivo: se recalcula según arrastras.
+  const deltaByTeam = useMemo(() => {
+    if (!previousPositions) return null;
+    const placed = positions.filter((v): v is string => !!v);
+    return evolutionByTeam(computeEvolution(placed, previousPositions));
+  }, [positions, previousPositions]);
+
+  const sortableIds = useMemo(
+    () => positions.map((p, idx) => p ?? `${EMPTY_ID_PREFIX}${idx}`),
+    [positions],
+  );
 
   const placeTeam = useCallback((teamAbbr: string) => {
     setPositions((cur) => {
@@ -100,23 +160,33 @@ export function RankingBoard({ voting }: Props) {
 
   const removeAt = useCallback((index: number) => {
     setPositions((cur) => {
-      // Remove the item and compact: keep others in order, leaving null at the end
+      // Se quita el equipo y el resto sube: el hueco queda al final.
       const next = cur.filter((_, i) => i !== index);
       next.push(null);
       return next;
     });
   }, []);
 
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setDragging(String(event.active.id));
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setDragging(null);
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const from = sortableIds.indexOf(String(active.id));
+      const to = sortableIds.indexOf(String(over.id));
+      if (from === -1 || to === -1) return;
+      // Mover e insertar: los equipos intermedios se desplazan un puesto.
+      setPositions((cur) => arrayMove(cur, from, to));
+    },
+    [sortableIds],
+  );
+
   const handleSubmit = useCallback(async () => {
     setError(null);
-    if (fullName.trim().length < 2) {
-      setError("Introduce tu nombre completo");
-      return;
-    }
-    if (!email.includes("@")) {
-      setError("Introduce un email válido");
-      return;
-    }
     if (!complete) {
       setError("Tienes que colocar los 32 equipos");
       return;
@@ -127,11 +197,7 @@ export function RankingBoard({ voting }: Props) {
       const res = await fetch("/api/rankings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          fullName: fullName.trim(),
-          email: email.trim(),
-          positions: positions as string[],
-        }),
+        body: JSON.stringify({ positions: positions as string[] }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -139,8 +205,7 @@ export function RankingBoard({ voting }: Props) {
       }
       const data = (await res.json()) as { id: string };
       try {
-        localStorage.removeItem(storageKey(votingId));
-        sessionStorage.setItem(userDataKey, JSON.stringify({ fullName, email }));
+        localStorage.removeItem(draftKey(user.id));
       } catch {
         // ignore
       }
@@ -150,7 +215,9 @@ export function RankingBoard({ voting }: Props) {
       setError(msg);
       setSubmitting(false);
     }
-  }, [complete, email, fullName, positions, router, votingId]);
+  }, [complete, positions, router, user.id]);
+
+  const draggingTeam = dragging ? findTeamByAbbr(dragging) : undefined;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -172,7 +239,7 @@ export function RankingBoard({ voting }: Props) {
             </div>
             <div>
               <p className="font-subhead text-[10px] uppercase tracking-wide text-muted">
-                Votación
+                {user.fullName}
               </p>
               <p className="font-subhead text-sm leading-tight">{votingMeta.name}</p>
             </div>
@@ -200,37 +267,40 @@ export function RankingBoard({ voting }: Props) {
       </header>
 
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-4">
-        {/* User identity */}
-        <div className="mb-4 grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface p-3 sm:grid-cols-2">
-          <label className="text-xs">
-            <span className="font-subhead mb-1 block text-[10px] uppercase tracking-wide text-muted">
-              Nombre completo
-            </span>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              maxLength={30}
-              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-foreground"
-              placeholder="Tu nombre"
-              autoComplete="name"
-            />
-          </label>
-          <label className="text-xs">
-            <span className="font-subhead mb-1 block text-[10px] uppercase tracking-wide text-muted">
-              Email
-            </span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-foreground"
-              placeholder="tu@email.com"
-              autoComplete="email"
-              inputMode="email"
-            />
-          </label>
-        </div>
+        <nav className="mb-4 flex flex-wrap gap-2">
+          <Link
+            href="/historico"
+            className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
+          >
+            Revisar Screenshots
+          </Link>
+          <Link
+            href="/perfil"
+            className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
+          >
+            Mi cuenta
+          </Link>
+        </nav>
+
+        {staleSince && (
+          <p className="mb-4 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
+            Tu ranking no cambia desde <strong>{staleSince}</strong>. Actualízalo para
+            entrar en el próximo screenshot.
+          </p>
+        )}
+
+        {previousLabel && (
+          <p className="mb-4 text-[11px] text-muted">
+            Las flechas comparan con <strong>{previousLabel}</strong> y se actualizan
+            según mueves equipos.
+          </p>
+        )}
+
+        {!votingActive && (
+          <p className="mb-4 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent">
+            La votación está cerrada: puedes reordenar tu ranking pero no guardarlo.
+          </p>
+        )}
 
         {/* Tabs (mobile) */}
         <div className="mb-3 grid grid-cols-2 overflow-hidden rounded-xl border border-border bg-surface lg:hidden">
@@ -283,26 +353,59 @@ export function RankingBoard({ voting }: Props) {
             aria-label="Mi ranking"
           >
             <h2 className="font-subhead mb-2 text-[11px] uppercase tracking-wide text-muted">
-              Tu ranking (1 = mejor, 32 = peor)
+              Arrastra por el asa ⠿ para reordenar (1 = mejor, 32 = peor)
             </h2>
-            <ol className="space-y-2">
-              {positions.map((teamAbbr, idx) => {
-                const team: Team | null = teamAbbr ? findTeamByAbbr(teamAbbr) ?? null : null;
-                return (
-                  <li key={idx}>
-                    <RankingSlot
-                      position={idx + 1}
-                      team={team}
-                      canMoveUp={idx > 0 && !!team}
-                      canMoveDown={idx < TOTAL_TEAMS - 1 && !!team && !!positions[idx + 1]}
-                      onMoveUp={() => swap(idx, idx - 1)}
-                      onMoveDown={() => swap(idx, idx + 1)}
-                      onRemove={() => removeAt(idx)}
-                    />
-                  </li>
-                );
-              })}
-            </ol>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setDragging(null)}
+            >
+              <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+                <ol className="space-y-2">
+                  {positions.map((teamAbbr, idx) => {
+                    const team: Team | null = teamAbbr
+                      ? findTeamByAbbr(teamAbbr) ?? null
+                      : null;
+                    return (
+                      <li key={sortableIds[idx]}>
+                        <RankingSlot
+                          sortableId={sortableIds[idx]}
+                          position={idx + 1}
+                          team={team}
+                          canMoveUp={idx > 0 && !!team}
+                          canMoveDown={
+                            idx < TOTAL_TEAMS - 1 && !!team && !!positions[idx + 1]
+                          }
+                          delta={
+                            teamAbbr
+                              ? deltaByTeam?.get(teamAbbr)?.delta ?? null
+                              : null
+                          }
+                          since={previousLabel ?? undefined}
+                          onMoveUp={() => swap(idx, idx - 1)}
+                          onMoveDown={() => swap(idx, idx + 1)}
+                          onRemove={() => removeAt(idx)}
+                        />
+                      </li>
+                    );
+                  })}
+                </ol>
+              </SortableContext>
+              <DragOverlay>
+                {draggingTeam ? (
+                  <div className="flex items-center gap-2 rounded-xl border-2 bg-surface px-2 py-2 shadow-lg"
+                    style={{ borderColor: votingMeta.accent }}
+                  >
+                    <TeamMark abbr={draggingTeam.abbr} size={36} />
+                    <p className="truncate text-sm font-semibold">
+                      {draggingTeam.location} {draggingTeam.name}
+                    </p>
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           </section>
         </div>
       </div>
@@ -318,11 +421,15 @@ export function RankingBoard({ voting }: Props) {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!complete || submitting}
+            disabled={!complete || submitting || !votingActive}
             className="font-subhead w-full rounded-xl px-4 py-3 text-base uppercase tracking-wide text-white transition active:scale-[0.98] disabled:opacity-40"
             style={{ background: votingMeta.accent }}
           >
-            {submitting ? "Enviando…" : complete ? "Enviar ranking" : `Coloca los ${TOTAL_TEAMS - placedCount} restantes`}
+            {submitting
+              ? "Guardando…"
+              : complete
+                ? "Guardar ranking"
+                : `Coloca los ${TOTAL_TEAMS - placedCount} restantes`}
           </button>
         </div>
       </footer>

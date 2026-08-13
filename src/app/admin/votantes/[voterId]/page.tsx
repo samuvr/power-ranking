@@ -1,6 +1,12 @@
 import { notFound } from "next/navigation";
-import { getRankingsByVoting, getVoting, toPublicVoting } from "@/lib/db/client";
+import {
+  getLatestSnapshotEntryByEmail,
+  getRankingsByVoting,
+  getVoting,
+  toPublicVoting,
+} from "@/lib/db/client";
 import { computeDeviationLeaveOneOut } from "@/lib/ranking-deviation";
+import { computeEvolution } from "@/lib/ranking-evolution";
 import { VoterRankingView } from "./VoterRankingView";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +31,16 @@ export default async function VoterRankingPage({
     rows.filter((r) => r.id !== voterRow.id).map((r) => r.positions),
   );
 
+  // Evolución respecto a la última foto en la que aparece este votante.
+  const previous = await getLatestSnapshotEntryByEmail(voterRow.email, voting.id);
+  const deltas: Record<string, number | null> = {};
+  for (const evolution of computeEvolution(
+    voterRow.positions,
+    previous?.positions ?? null,
+  )) {
+    deltas[evolution.teamAbbr] = evolution.delta;
+  }
+
   return (
     <VoterRankingView
       voting={toPublicVoting(voting)}
@@ -33,9 +49,12 @@ export default async function VoterRankingPage({
         fullName: voterRow.full_name,
         email: voterRow.email,
         positions: voterRow.positions,
-        updatedAt: voterRow.updated_at,
+        updatedAt: new Date(voterRow.updated_at).toISOString(),
       }}
       deviation={deviation}
+      deltas={deltas}
+      since={previous?.snapshot_name ?? null}
+      baseSnapshotId={previous?.snapshot_id ?? null}
     />
   );
 }

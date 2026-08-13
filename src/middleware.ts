@@ -1,20 +1,38 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { ADMIN_COOKIE_NAME } from "@/lib/auth";
+import { ADMIN_COOKIE_NAME, USER_COOKIE_NAME } from "@/lib/cookie-names";
 
 export const config = {
-  matcher: ["/", "/admin/:path*", "/api/admin/:path*"],
+  matcher: [
+    "/",
+    "/vote/:path*",
+    "/historico/:path*",
+    "/equipos/:path*",
+    "/perfil",
+    "/admin/:path*",
+    "/api/admin/:path*",
+  ],
 };
 
-async function isAuthenticated(request: NextRequest): Promise<boolean> {
+function secretKey(): Uint8Array | null {
   const secret = process.env.SESSION_SECRET;
-  if (!secret) return false;
-  const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value;
+  if (!secret) return null;
+  return new TextEncoder().encode(secret);
+}
+
+async function hasRole(
+  request: NextRequest,
+  cookieName: string,
+  role: string,
+): Promise<boolean> {
+  const key = secretKey();
+  if (!key) return false;
+  const token = request.cookies.get(cookieName)?.value;
   if (!token) return false;
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
-    return payload.role === "admin";
+    const { payload } = await jwtVerify(token, key);
+    return payload.role === role;
   } catch {
     return false;
   }
@@ -23,20 +41,30 @@ async function isAuthenticated(request: NextRequest): Promise<boolean> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Al entrar a la home, limpiamos el acceso previo de votante (y cualquier
-  // cookie legacy de admin de votación) para que la contraseña se pida de
-  // nuevo cada vez que arranca el flujo.
+  // La home es login/registro: con sesión abierta se va directo al ranking.
   if (pathname === "/") {
-    const response = NextResponse.next();
-    for (const cookie of request.cookies.getAll()) {
-      if (
-        cookie.name.startsWith("voter_access_") ||
-        cookie.name.startsWith("voting_admin_")
-      ) {
-        response.cookies.delete(cookie.name);
-      }
+    if (await hasRole(request, USER_COOKIE_NAME, "user")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/vote";
+      url.search = "";
+      return NextResponse.redirect(url);
     }
-    return response;
+    return NextResponse.next();
+  }
+
+  // Zona de usuario registrado. El admin también puede entrar para revisar.
+  if (
+    pathname.startsWith("/vote") ||
+    pathname.startsWith("/historico") ||
+    pathname.startsWith("/equipos") ||
+    pathname === "/perfil"
+  ) {
+    if (await hasRole(request, USER_COOKIE_NAME, "user")) return NextResponse.next();
+    if (await hasRole(request, ADMIN_COOKIE_NAME, "admin")) return NextResponse.next();
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    url.search = "";
+    return NextResponse.redirect(url);
   }
 
   // /admin muestra el propio formulario de login; el resto del panel y todas
@@ -47,7 +75,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (await isAuthenticated(request)) {
+  if (await hasRole(request, ADMIN_COOKIE_NAME, "admin")) {
     return NextResponse.next();
   }
 

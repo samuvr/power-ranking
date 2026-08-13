@@ -42,6 +42,34 @@ export function computeDeviation(
 }
 
 /**
+ * Igual que `computeDeviation` pero contra un consenso ya congelado (la lista
+ * ordenada que guarda cada screenshot), sin pasar por el algoritmo.
+ */
+export function computeDeviationVsPositions(
+  voterPositions: string[],
+  consensusPositions: string[],
+): DeviationResult {
+  const consensusPosByTeam = new Map<string, number>();
+  consensusPositions.forEach((teamAbbr, idx) => consensusPosByTeam.set(teamAbbr, idx + 1));
+
+  const perTeam: DeviationEntry[] = [];
+  let totalAbs = 0;
+  voterPositions.forEach((teamAbbr, idx) => {
+    const consensusPos = consensusPosByTeam.get(teamAbbr);
+    if (consensusPos === undefined) return;
+    const voterPos = idx + 1;
+    const diff = consensusPos - voterPos;
+    perTeam.push({ teamAbbr, voterPos, consensusPos, diff });
+    totalAbs += Math.abs(diff);
+  });
+
+  return {
+    meanAbsDeviation: perTeam.length === 0 ? 0 : totalAbs / perTeam.length,
+    perTeam,
+  };
+}
+
+/**
  * Desviación "leave-one-out": compara el ranking de un votante contra el
  * consenso calculado SIN su propio voto. Evita el sesgo de auto-comparación
  * (un votante extremo arrastra el consenso hacia sí mismo y parecería menos
