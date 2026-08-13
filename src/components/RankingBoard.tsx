@@ -248,6 +248,12 @@ export function RankingBoard({
             Revisar Screenshots
           </Link>
           <Link
+            href="/consenso"
+            className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
+          >
+            Ver Consensus
+          </Link>
+          <Link
             href="/perfil"
             className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
           >
