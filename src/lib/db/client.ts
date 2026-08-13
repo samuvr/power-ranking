@@ -351,6 +351,20 @@ export async function getSnapshotEntries(snapshotId: string): Promise<SnapshotEn
   return result.rows;
 }
 
+/** Entrada de un usuario concreto dentro de un screenshot, si participó. */
+export async function getSnapshotEntryByUser(
+  snapshotId: string,
+  userId: string,
+): Promise<SnapshotEntryRow | null> {
+  const result = await sql<SnapshotEntryRow>`
+    SELECT id, snapshot_id, user_id, full_name, email, positions, created_at
+    FROM snapshot_entries
+    WHERE snapshot_id = ${snapshotId} AND user_id = ${userId}
+    LIMIT 1
+  `;
+  return result.rows[0] ?? null;
+}
+
 export async function getSnapshotEntryById(id: string): Promise<SnapshotEntryRow | null> {
   const result = await sql<SnapshotEntryRow>`
     SELECT id, snapshot_id, user_id, full_name, email, positions, created_at

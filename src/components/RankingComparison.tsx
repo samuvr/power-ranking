@@ -12,22 +12,30 @@ import { RankingListView } from "./RankingListView";
 const fmt = (n: number) =>
   n.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** De quién es el ranking que se enfrenta al consensus. */
-export type ComparisonSubject = {
-  /** true cuando es el ranking de quien mira la página (se habla de "tú"). */
-  self: boolean;
-  /** Nombre corto con el que referirse al votante cuando no es uno mismo. */
+/**
+ * Cómo se nombra el ranking que se pinta en la lista. Se pasa ya redactado
+ * porque en español cambia la preposición: "del consensus" pero "de Marcos".
+ */
+export type ComparisonReference = {
+  /** Encabezado de la lista: "Consensus", "Ranking de Marcos". */
+  title: string;
+  /** Nombre corto junto a cada puesto: "Consensus #12", "Marcos #12". */
   name: string;
+  /** Completa "por encima …": "del consensus", "de Marcos". */
+  de: string;
+  /** Completa "puestos frente …": "al consensus", "a Marcos". */
+  a: string;
 };
 
 type Props = {
-  /** Consensus a pintar, de la posición 1 a la 32. */
-  consensusPositions: string[];
-  /** Puestos que gana cada equipo en el consensus respecto a la foto anterior. */
+  /** Ranking de referencia, de la posición 1 a la 32: el que se pinta. */
+  positions: string[];
+  reference: ComparisonReference;
+  /** Puestos que gana cada equipo en ese ranking respecto a la foto anterior. */
   deltaByTeam: Map<string, number | null>;
   /** Nombre de la foto con la que se comparan las flechas. */
   since: string | null;
-  /** Ranking del votante frente al consensus; null si todavía no tiene. */
+  /** Tu ranking frente al de referencia; null si no hay con qué comparar. */
   deviation: DeviationResult | null;
   /**
    * Desviación media a destacar. En el consensus en vivo se pasa la versión
@@ -35,28 +43,23 @@ type Props = {
    */
   meanDeviation?: number | null;
   accent: string;
-  subject: ComparisonSubject;
 };
 
 /**
- * Consensus 1 → 32 con el ranking de un votante al lado: desviación media,
- * clavados, mayor distancia, sus equipos más sobre/infravalorados y la lista
- * completa con flechas de evolución. Lo comparten `/consenso` (el ranking de
- * quien mira) y `/usuarios/[userId]` (el de cualquier otro).
+ * Un ranking 1 → 32 con tus puestos al lado: desviación media, clavados,
+ * mayor distancia, los equipos en los que más te separas y la lista completa
+ * con flechas de evolución. Lo comparten `/consenso` (donde la referencia es
+ * el consensus) y `/usuarios/[userId]` (donde es el ranking de otro usuario).
  */
-export function ConsensusComparison({
-  consensusPositions,
+export function RankingComparison({
+  positions,
+  reference,
   deltaByTeam,
   since,
   deviation,
   meanDeviation,
   accent,
-  subject,
 }: Props) {
-  const who = subject.self ? "Tú" : subject.name;
-  const tiene = subject.self ? "tienes" : "tiene";
-  const cree = subject.self ? "crees tú" : `cree ${subject.name}`;
-
   const exactHits = deviation?.perTeam.filter((e) => e.diff === 0).length ?? 0;
   const { overrated, underrated } = topOverratedUnderrated(deviation?.perTeam ?? [], 3);
   const diffByTeam = new Map<string, DeviationEntry>(
@@ -74,7 +77,7 @@ export function ConsensusComparison({
             <p className="font-mono text-2xl font-bold">
               {fmt(meanDeviation ?? deviation.meanAbsDeviation)}
             </p>
-            <p className="text-[11px] text-muted">puestos frente al consensus</p>
+            <p className="text-[11px] text-muted">puestos frente {reference.a}</p>
           </div>
           <div className="rounded-xl border border-border bg-surface p-3">
             <p className="font-subhead text-[10px] uppercase tracking-wide text-muted">
@@ -98,36 +101,33 @@ export function ConsensusComparison({
       {(overrated.length > 0 || underrated.length > 0) && (
         <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <DeviationColumn
-            title={`Donde más ${cree}`}
-            subtitle={`Los ${tiene} muy por encima del consensus`}
+            title="Donde más crees tú"
+            subtitle={`Los tienes muy por encima ${reference.de}`}
             entries={overrated}
             accent={accent}
             variant="over"
-            who={who}
+            reference={reference}
           />
           <DeviationColumn
-            title={`Donde menos ${cree}`}
-            subtitle={`Los ${tiene} muy por debajo del consensus`}
+            title="Donde menos crees tú"
+            subtitle={`Los tienes muy por debajo ${reference.de}`}
             entries={underrated}
             accent={accent}
             variant="under"
-            who={who}
+            reference={reference}
           />
         </section>
       )}
 
       <h2 className="font-subhead mb-2 text-[11px] uppercase tracking-wide text-muted">
-        {deviation
-          ? subject.self
-            ? "Consensus 1 → 32, con tu puesto al lado"
-            : `Consensus 1 → 32, con el puesto de ${subject.name} al lado`
-          : "Consensus 1 → 32"}
+        {reference.title} 1 → 32
+        {deviation && ", con tu puesto al lado"}
         {since && ` · flechas vs ${since}`}
       </h2>
 
       {deviation ? (
         <ol className="space-y-2">
-          {consensusPositions.map((teamAbbr, idx) => {
+          {positions.map((teamAbbr, idx) => {
             const team = findTeamByAbbr(teamAbbr);
             const entry = diffByTeam.get(teamAbbr);
             return (
@@ -147,7 +147,7 @@ export function ConsensusComparison({
                     {team ? `${team.location} ${team.name}` : teamAbbr}
                   </Link>
                   <p className="font-mono text-xs text-muted">
-                    {entry ? `${who} #${entry.voterPos}` : teamAbbr}
+                    {entry ? `Tú #${entry.voterPos}` : teamAbbr}
                   </p>
                 </div>
                 <EvolutionBadge
@@ -155,24 +155,26 @@ export function ConsensusComparison({
                   since={since ?? undefined}
                   size="sm"
                 />
-                <DiffBadge diff={entry?.diff ?? null} tiene={tiene} />
+                <DiffBadge diff={entry?.diff ?? null} reference={reference} />
               </li>
             );
           })}
         </ol>
       ) : (
-        <RankingListView
-          positions={consensusPositions}
-          deltaByTeam={deltaByTeam}
-          since={since}
-        />
+        <RankingListView positions={positions} deltaByTeam={deltaByTeam} since={since} />
       )}
     </>
   );
 }
 
-/** Puestos que le saca el votante al consensus: verde arriba, rojo abajo. */
-function DiffBadge({ diff, tiene }: { diff: number | null; tiene: string }) {
+/** Puestos que le sacas al ranking de referencia: verde arriba, rojo abajo. */
+function DiffBadge({
+  diff,
+  reference,
+}: {
+  diff: number | null;
+  reference: ComparisonReference;
+}) {
   if (diff === null) {
     return (
       <span className="min-w-11 shrink-0 rounded-md border border-border px-2 py-1 text-center font-mono text-[11px] text-muted">
@@ -184,7 +186,7 @@ function DiffBadge({ diff, tiene }: { diff: number | null; tiene: string }) {
     return (
       <span
         className="min-w-11 shrink-0 rounded-md border border-border px-2 py-1 text-center font-mono text-[11px] text-muted"
-        title={`Lo ${tiene} en el mismo puesto que el consensus`}
+        title={`Lo tienes en el mismo puesto ${reference.de}`}
       >
         =
       </span>
@@ -194,8 +196,8 @@ function DiffBadge({ diff, tiene }: { diff: number | null; tiene: string }) {
   const color = up ? "#16a34a" : "#dc2626";
   const puestos = Math.abs(diff) === 1 ? "puesto" : "puestos";
   const label = up
-    ? `Lo ${tiene} ${Math.abs(diff)} ${puestos} por encima del consensus`
-    : `Lo ${tiene} ${Math.abs(diff)} ${puestos} por debajo del consensus`;
+    ? `Lo tienes ${Math.abs(diff)} ${puestos} por encima ${reference.de}`
+    : `Lo tienes ${Math.abs(diff)} ${puestos} por debajo ${reference.de}`;
   return (
     <span
       className="min-w-11 shrink-0 rounded-md border px-2 py-1 text-center font-mono text-[11px] font-bold"
@@ -215,14 +217,14 @@ function DeviationColumn({
   entries,
   accent,
   variant,
-  who,
+  reference,
 }: {
   title: string;
   subtitle: string;
   entries: DeviationEntry[];
   accent: string;
   variant: "over" | "under";
-  who: string;
+  reference: ComparisonReference;
 }) {
   if (entries.length === 0) return null;
   const color = variant === "over" ? "#16a34a" : "#dc2626";
@@ -249,7 +251,7 @@ function DeviationColumn({
                   {team ? `${team.location} ${team.name}` : entry.teamAbbr}
                 </p>
                 <p className="text-[11px] text-muted">
-                  {who} #{entry.voterPos} · Consensus #{entry.consensusPos}
+                  Tú #{entry.voterPos} · {reference.name} #{entry.consensusPos}
                 </p>
               </div>
               <span
