@@ -88,6 +88,8 @@ src/
       success/                 # share image + biggest movers
     consenso/                  # consensus en vivo vs el ranking del usuario
     perfil/                    # account settings, streak, mean deviation
+    usuarios/                  # user picker + any user's ranking vs consensus
+                               # (live, or ?snapshot=<id> for a frozen one)
     historico/                 # screenshot list, detail, entries, comparador
     equipos/                   # team index + per-team evolution chart
     admin/
@@ -106,7 +108,9 @@ src/
                                # voters image, voting settings PATCH
   components/                  # RankingBoard, RankingSlot, TeamMark,
                                # EvolutionBadge, RankingListView, VotingLogo,
-                               # VotingSettingsForm
+                               # VotingSettingsForm, ConsensusComparison
+                               # (consensus + a voter's ranking side by side,
+                               #  shared by /consenso and /usuarios/[userId])
   data/                        # teams.ts, power-metric.ts (+ power-metric.test.ts)
   lib/
     db/client.ts               # all SQL queries + row types

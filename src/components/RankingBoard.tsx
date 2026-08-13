@@ -254,6 +254,12 @@ export function RankingBoard({
             Ver Consensus
           </Link>
           <Link
+            href="/usuarios"
+            className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
+          >
+            Ver otros usuarios
+          </Link>
+          <Link
             href="/perfil"
             className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
           >
