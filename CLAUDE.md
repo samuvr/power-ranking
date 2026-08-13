@@ -5,10 +5,11 @@ Guidance for AI assistants (and humans) working in this repository.
 ## What this is
 
 **Team Power Rankings** is a Next.js web app where users build and share their
-personal Power Ranking of the 32 NFL 2026 teams. It supports **multiple
-independent votings** (e.g. "NFL Alicante", "El Capologist"), each
-password‑gated, and an admin panel that computes a **global consensus
-ranking** from all submissions using an iterative bottom‑up algorithm.
+personal Power Ranking of the 32 NFL 2026 teams. There is exactly **one
+voting** ("NFL Alicante"): voters land on `/`, type name + email + the voting
+password and go straight to the ranking builder. An admin panel computes a
+**global consensus ranking** from all submissions using an iterative bottom‑up
+algorithm.
 
 This project is a fork of [QBRankings](https://github.com/samuvr/qbrankings),
 adapted so the rankable entity is a **team** (`src/data/teams.ts`) instead of
@@ -20,11 +21,11 @@ The product copy and most code comments are in **Spanish**; keep new
 user‑facing strings and comments in Spanish to match. Code identifiers are in
 English.
 
-> Note: `README.md` is partly out of date. It describes a fixed two‑voting setup
-> backed by a Postgres enum. The codebase has since moved to a dynamic
-> `votings` table (UUID PKs, per‑voting passwords, admin CRUD). When README and
-> code disagree, **the code is the source of truth** — and consider updating the
-> README.
+> History: this app used to support multiple votings (dynamic `votings` table,
+> per‑voting admin passwords, admin CRUD, voting selector on the landing page).
+> That was collapsed into a single voting; the `votings` table survives with
+> exactly **one row**. When docs and code disagree, **the code is the source of
+> truth** — and consider updating the docs.
 
 ## Stack
 
@@ -32,9 +33,8 @@ English.
 - **Tailwind CSS 4** (via `@tailwindcss/postcss`, no `tailwind.config`)
 - **Vercel Postgres** (Neon) through `@vercel/postgres` (tagged-template `sql`)
 - **`next/og`** (Satori) for server-generated share images (PNG)
-- **`jose`** for JWT cookies; **`bcryptjs`** for per-voting password hashes
+- **`jose`** for JWT cookies; **`bcryptjs`** for the voter password hash
 - **`zod` v4** for all input validation
-- **`@dnd-kit`** for drag-and-drop reordering (admin votings manager)
 - **Vitest** for unit tests
 - Path alias: `@/*` → `./src/*`
 
@@ -71,50 +71,53 @@ Per-voting passwords are **not** env vars anymore — they live hashed in the
 ```
 src/
   app/                         # Next.js App Router (routes = folders)
-    page.tsx / HomeForm.tsx    # landing: name + email + voting selector
+    page.tsx / HomeForm.tsx    # landing: name + email + voting password
     layout.tsx, globals.css
-    vote/[voting]/
-      access/                  # per-voting voter password gate
+    vote/
       page.tsx                 # the ranking builder (tap team → slot, reorder)
       success/                 # shows generated share image
     admin/
-      page.tsx, LoginForm.tsx  # superadmin login
-      [voting]/                # global ranking dashboard for a voting
-        access/                # per-voting admin password gate
-        votantes/[voterId]/    # individual voter deviation view
-      votings/new, votings/[id]/edit   # voting CRUD (superadmin only)
+      page.tsx, LoginForm.tsx  # admin login + global ranking dashboard
+      AdminRankingView.tsx     # dashboard UI (list / stream, PNG exports)
+      ajustes/                 # edit the single voting's settings
+      votantes/[voterId]/      # individual voter deviation view
     api/
       rankings/                # POST submit, GET .../[id]/image (og)
-      voting/[slug]/access/    # voter password check → sets cookie
-      admin/                   # login, rankings, voters image, votings CRUD/reorder
+      voting/access/           # voter password check → sets cookie
+      admin/                   # login, rankings (+story/round images),
+                               # voters image, voting settings PATCH
   components/                  # TeamCard, RankingBoard, RankingSlot, TeamMark,
-                               # VotingForm, VotingSelector, VotingsManager
+                               # VotingLogo, VotingSettingsForm
   data/                        # teams.ts, power-metric.ts (+ power-metric.test.ts)
   lib/
     db/client.ts               # all SQL queries + row types
     db/migrate.ts              # schema creation + legacy migration + seeding
-    auth.ts                    # superadmin JWT cookie + ADMIN_PASSWORD check
-    voting-access.ts           # per-voting voter / voting_admin JWT cookies
+    auth.ts                    # admin JWT cookie + ADMIN_PASSWORD check
+    voting-access.ts           # voter JWT cookie + bcrypt helpers
     schemas.ts                 # zod schemas for every input
     ranking-algorithm.ts       # consensus algorithm (+ .test.ts)
     ranking-deviation.ts       # voter vs consensus deviation
   middleware.ts                # route protection + cookie hygiene
-public/                        # static voting logos
+public/                        # static voting logo
 ```
 
 ## Core domain concepts
 
-### Votings (`votings` table)
-Each voting has a UUID `id`, a URL `slug`, display fields (`name`,
+### The voting (`votings` table, single row)
+The one voting has a UUID `id`, a `slug` (`nfl-alicante`, no longer part of any
+URL — it identifies the row and names exported PNGs), display fields (`name`,
 `short_name`, `description`, `accent`/`accent_dark` hex colors, `logo_url`),
-two bcrypt hashes (`voter_password_hash`, `admin_password_hash`), a `position`
-for ordering, and an `active` flag. Public reads go through helpers that strip
-the password hashes (`VotingPublic` / `stripSecrets`).
+a bcrypt `voter_password_hash`, a `public_access` flag (skip the password) and
+an `active` flag (closes voting). `getVoting()` resolves it — canonical slug
+first, oldest row as fallback — and `toPublicVoting()` strips the hash
+(`VotingPublic`). Nothing in the app creates or deletes votings; `migrate.ts`
+seeds the row and removes leftovers.
 
 ### Rankings (`rankings` table)
 One row per `(email, voting)` (unique constraint → upsert on submit). Stores
 `positions` as a JSONB array of team `abbr`s, ordered position 1 (best) … N
-(worst). `voting` is a UUID FK → `votings(id)`.
+(worst). `voting` is a UUID FK → `votings(id)`; the API fills it from
+`getVoting()`, clients never send it.
 
 ### Teams (`src/data/teams.ts`)
 Static list of the 32 NFL teams (`abbr`, `name`, `location`, colors),
@@ -149,23 +152,21 @@ rounds, or tie-breaking, update `ranking-algorithm.test.ts` accordingly.
 
 ## Auth & access model
 
-Three independent layers, all JWT cookies signed with `SESSION_SECRET`
+Two independent layers, both JWT cookies signed with `SESSION_SECRET`
 (HS256, 12h expiry, `httpOnly`, `secure` in prod):
 
-1. **Superadmin** (`lib/auth.ts`, cookie `admin_session`): password
-   `ADMIN_PASSWORD`, constant-time compared. Full access to everything
-   incl. voting CRUD.
-2. **Voter** (`lib/voting-access.ts`, cookie `voter_access_<votingId>`):
-   per-voting `voter_password`. Required to submit a ranking.
-3. **Voting admin** (cookie `voting_admin_<votingId>`): per-voting
-   `admin_password`. Can view that voting's dashboard but not manage votings.
+1. **Admin** (`lib/auth.ts`, cookie `admin_session`): password
+   `ADMIN_PASSWORD`, constant-time compared. Full access to the panel.
+2. **Voter** (`lib/voting-access.ts`, cookie `voter_access_<votingId>`): the
+   voting's `voter_password` (skipped when `public_access`). Required to
+   submit a ranking.
 
-`middleware.ts` enforces: `/admin/votings*` and most `/api/admin/votings*`
-require superadmin; login/access routes are exempt; granular per-voting auth
-for `/admin/[slug]` is delegated to the server component (superadmin OR that
-voting's admin). On every visit to `/`, the middleware **deletes all
-`voter_access_*` / `voting_admin_*` cookies** so each flow re-prompts for the
-password.
+`middleware.ts` enforces: everything under `/admin` and `/api/admin` requires
+the admin session, except the `/admin` page itself (it renders the login form)
+and `/api/admin/login`. Admin API handlers re-check `isAdminAuthenticated()`
+as defense in depth. On every visit to `/`, the middleware **deletes all
+`voter_access_*` cookies** (plus legacy `voting_admin_*` ones) so each flow
+re-prompts for the password.
 
 ## Conventions to follow
 
@@ -179,11 +180,10 @@ password.
   row type there.
 - **Validate every external input with a zod schema** from `lib/schemas.ts`.
   API routes parse the body, return `400` with `err.issues` on `ZodError`,
-  and use `export const runtime = "nodejs"` (needed for bcrypt/jose). Note
-  voting ids use `z.guid()` (accepts non-RFC UUIDs — see commit history).
+  and use `export const runtime = "nodejs"` (needed for bcrypt/jose).
 - **Force dynamic** for pages/routes that read the DB per request
   (`export const dynamic = "force-dynamic"` or `runtime = "nodejs"`).
-- **Never expose password hashes** — return `VotingPublic`, not `VotingRow`.
+- **Never expose the password hash** — return `VotingPublic`, not `VotingRow`.
 - **Keep the algorithm pure**: no DB/IO in `ranking-algorithm.ts` /
   `ranking-deviation.ts`; feed them plain arrays.
 - **Share images** (`api/**/image/route.tsx`) use `next/og` + Satori. Satori
@@ -195,10 +195,14 @@ password.
 
 `src/lib/db/migrate.ts` is the single, **idempotent** migration entry point
 (`npm run db:migrate`). It creates the `votings` and `rankings` tables, seeds
-the two legacy votings with random placeholder passwords (printed to stdout —
-change them), and migrates pre-existing rows from the old `voting_type` enum to
-the new UUID FK. There is no migration framework; extend this script with
-`CREATE TABLE IF NOT EXISTS` / guarded `ALTER`s and keep it re-runnable.
+the NFL Alicante row with a random placeholder password (printed to stdout —
+change it in `/admin/ajustes`), migrates pre-existing rows from the old
+`voting_type` enum to the UUID FK, drops the now unused `position` /
+`admin_password_hash` columns, and deletes leftover votings — silently when
+they have no rankings, otherwise only with
+`npm run db:migrate -- --purge-extra-votings`. There is no migration framework;
+extend this script with `CREATE TABLE IF NOT EXISTS` / guarded `ALTER`s and
+keep it re-runnable.
 
 ## Git workflow
 

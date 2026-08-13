@@ -1,25 +1,14 @@
 import { NextResponse } from "next/server";
-import { getRankingsByVoting, getVotingBySlug } from "@/lib/db/client";
+import { getRankingsByVoting, getVoting } from "@/lib/db/client";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
-import { isAdminAuthenticated } from "@/lib/auth";
-import { hasVotingAdminAccess } from "@/lib/voting-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Params = Promise<{ voting: string }>;
-
-export async function GET(_req: Request, { params }: { params: Params }) {
-  const { voting: slug } = await params;
-  const voting = await getVotingBySlug(slug);
+export async function GET() {
+  const voting = await getVoting();
   if (!voting) {
     return NextResponse.json({ error: "Unknown voting" }, { status: 404 });
-  }
-
-  const isSuper = await isAdminAuthenticated();
-  const isVotingAdmin = await hasVotingAdminAccess(voting.id);
-  if (!isSuper && !isVotingAdmin) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const rows = await getRankingsByVoting(voting.id);

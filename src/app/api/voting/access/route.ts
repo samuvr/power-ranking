@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { VotingAccessSchema } from "@/lib/schemas";
-import { getVotingBySlug } from "@/lib/db/client";
+import { getVoting } from "@/lib/db/client";
 import { setVoterCookie, verifyPassword } from "@/lib/voting-access";
 
 export const runtime = "nodejs";
 
-type Params = Promise<{ slug: string }>;
-
-export async function POST(req: Request, { params }: { params: Params }) {
-  const { slug } = await params;
-
+export async function POST(req: Request) {
   let body: unknown;
   try {
     body = await req.json();
@@ -28,9 +24,9 @@ export async function POST(req: Request, { params }: { params: Params }) {
     throw err;
   }
 
-  const voting = await getVotingBySlug(slug);
+  const voting = await getVoting();
   if (!voting || !voting.active) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Votación cerrada" }, { status: 404 });
   }
 
   if (!voting.public_access) {

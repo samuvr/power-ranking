@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { getRankingById, getVotingById } from "@/lib/db/client";
+import { getRankingById, getVoting } from "@/lib/db/client";
 import { findTeamByAbbr, teamLogoUrl } from "@/data/teams";
 
 export const runtime = "nodejs";
@@ -90,7 +90,7 @@ export async function GET(req: Request, { params }: { params: Params }) {
     return new Response("Not found", { status: 404 });
   }
 
-  const meta = await getVotingById(ranking.voting);
+  const meta = await getVoting();
   if (!meta) {
     return new Response("Voting not found", { status: 404 });
   }

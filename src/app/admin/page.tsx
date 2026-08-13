@@ -1,15 +1,19 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { getAllVotingsForAdmin, getRankingsCountByVoting } from "@/lib/db/client";
+import { getRankingsByVoting, getVoting, toPublicVoting } from "@/lib/db/client";
+import { computeGlobalRanking } from "@/lib/ranking-algorithm";
+import { computeDeviationLeaveOneOut } from "@/lib/ranking-deviation";
+import { getAllTeams } from "@/data/teams";
 import { LoginForm } from "./LoginForm";
-import { VotingsManager } from "@/components/VotingsManager";
+import { AdminRankingView } from "./AdminRankingView";
 
-type Search = Promise<{ next?: string }>;
+type Search = Promise<{ next?: string; mode?: string; round?: string }>;
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage({ searchParams }: { searchParams: Search }) {
-  const { next } = await searchParams;
+  const search = await searchParams;
   const authed = await isAdminAuthenticated();
 
   if (!authed) {
@@ -20,35 +24,72 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           <h1 className="mt-1 text-3xl font-black">Admin</h1>
           <p className="mt-2 text-sm text-muted">Introduce la contraseña para acceder.</p>
         </header>
-        <LoginForm nextPath={next ?? "/admin"} />
+        <LoginForm nextPath={search.next ?? "/admin"} />
       </main>
     );
   }
 
-  const [votings, counts] = await Promise.all([
-    getAllVotingsForAdmin(),
-    getRankingsCountByVoting(),
-  ]);
+  const voting = await getVoting();
+  if (!voting) notFound();
+
+  const rows = await getRankingsByVoting(voting.id);
+  const result = computeGlobalRanking(rows.map((r) => r.positions));
+  const teamCount = getAllTeams().length;
+
+  const initialMode = search.mode === "stream" ? "stream" : "list";
+  const initialRound = Math.max(
+    0,
+    Math.min(result.rounds.length - 1, parseInt(search.round ?? "0", 10) || 0),
+  );
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-5 py-8">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <main className="mx-auto w-full max-w-3xl px-5 py-8">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-subhead text-xs uppercase tracking-[0.25em] text-muted">Panel</p>
-          <h1 className="font-display text-5xl uppercase">Votaciones</h1>
+          <p
+            className="font-subhead text-xs uppercase tracking-[0.25em]"
+            style={{ color: voting.accent }}
+          >
+            Ranking global
+          </p>
+          <h1 className="font-display text-4xl uppercase leading-tight">{voting.name}</h1>
           <p className="mt-1 text-sm text-muted">
-            Gestiona votaciones, contraseñas y consulta los rankings globales.
+            {result.totalSubmissions} envíos · {teamCount} equipos en 7 rondas
           </p>
         </div>
         <Link
-          href="/admin/votings/new"
-          className="font-subhead rounded-xl bg-accent px-4 py-2 text-sm uppercase tracking-wide text-white transition hover:bg-accent-dark"
+          href="/admin/ajustes"
+          className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
         >
-          + Nueva votación
+          Ajustes
         </Link>
       </header>
 
-      <VotingsManager initialVotings={votings} counts={counts} />
+      {result.totalSubmissions === 0 ? (
+        <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">
+          Todavía no hay envíos en la votación.
+        </div>
+      ) : (
+        <AdminRankingView
+          voting={toPublicVoting(voting)}
+          result={result}
+          initialMode={initialMode}
+          initialRound={initialRound}
+          voters={rows
+            .map((r) => ({
+              id: r.id,
+              fullName: r.full_name,
+              email: r.email,
+              updatedAt: r.updated_at,
+              meanDeviation: computeDeviationLeaveOneOut(
+                r.positions,
+                rows.filter((o) => o.id !== r.id).map((o) => o.positions),
+              ).meanAbsDeviation,
+            }))
+            .sort((a, b) => a.meanDeviation - b.meanDeviation)
+            .map((v, idx) => ({ ...v, rankPosition: idx + 1 }))}
+        />
+      )}
     </main>
   );
 }

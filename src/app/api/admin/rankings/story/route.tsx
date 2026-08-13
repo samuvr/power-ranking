@@ -1,9 +1,8 @@
 import { ImageResponse } from "next/og";
-import { getRankingsByVoting, getVotingBySlug } from "@/lib/db/client";
+import { getRankingsByVoting, getVoting } from "@/lib/db/client";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import { findTeamByAbbr, teamLogoUrl } from "@/data/teams";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { hasVotingAdminAccess } from "@/lib/voting-access";
 
 export const runtime = "nodejs";
 
@@ -16,8 +15,6 @@ const ACCENT = "#C8102E";
 const SURFACE = "#FBF7E8";
 const BORDER = "rgba(10, 34, 64, 0.18)";
 const MUTED = "rgba(10, 34, 64, 0.6)";
-
-type Params = Promise<{ voting: string }>;
 
 async function loadGoogleFont(
   family: string,
@@ -77,17 +74,13 @@ function getOrigin(req: Request): string {
   return "http://localhost:3000";
 }
 
-export async function GET(req: Request, { params }: { params: Params }) {
-  const { voting: slug } = await params;
-
-  const voting = await getVotingBySlug(slug);
-  if (!voting) return new Response("Not found", { status: 404 });
-
-  const isSuper = await isAdminAuthenticated();
-  const isVotingAdmin = await hasVotingAdminAccess(voting.id);
-  if (!isSuper && !isVotingAdmin) {
+export async function GET(req: Request) {
+  if (!(await isAdminAuthenticated())) {
     return new Response("Unauthorized", { status: 401 });
   }
+
+  const voting = await getVoting();
+  if (!voting) return new Response("Not found", { status: 404 });
 
   const rows = await getRankingsByVoting(voting.id);
   if (rows.length === 0) return new Response("No submissions", { status: 404 });

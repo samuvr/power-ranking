@@ -1,22 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRankingById, getVotingBySlug } from "@/lib/db/client";
+import { getRankingById, getVoting } from "@/lib/db/client";
 import { ShareActions } from "./ShareActions";
 
-type Params = Promise<{ voting: string }>;
 type Search = Promise<{ id?: string }>;
 
-export default async function SuccessPage({
-  params,
-  searchParams,
-}: {
-  params: Params;
-  searchParams: Search;
-}) {
-  const { voting: slug } = await params;
+export default async function SuccessPage({ searchParams }: { searchParams: Search }) {
   const { id } = await searchParams;
   if (!id) notFound();
-  const voting = await getVotingBySlug(slug);
+  const voting = await getVoting();
   if (!voting) notFound();
   const ranking = await getRankingById(id);
   if (!ranking || ranking.voting !== voting.id) notFound();

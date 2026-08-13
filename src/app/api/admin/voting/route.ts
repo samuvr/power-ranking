@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { VotingUpdateSchema } from "@/lib/schemas";
-import { getVotingById, getVotingBySlug, updateVoting } from "@/lib/db/client";
+import { getVoting, updateVoting } from "@/lib/db/client";
 import { hashPassword } from "@/lib/voting-access";
+import { isAdminAuthenticated } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-type Params = Promise<{ id: string }>;
-
-export async function PATCH(req: Request, { params }: { params: Params }) {
-  const { id } = await params;
+export async function PATCH(req: Request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   let body: unknown;
   try {
@@ -31,25 +32,16 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
     throw err;
   }
 
-  const current = await getVotingById(id);
+  const current = await getVoting();
   if (!current) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (data.slug && data.slug !== current.slug) {
-    const other = await getVotingBySlug(data.slug);
-    if (other && other.id !== id) {
-      return NextResponse.json({ error: "Slug ya en uso" }, { status: 409 });
-    }
-  }
+  const voterPasswordHash = data.voterPassword
+    ? await hashPassword(data.voterPassword)
+    : undefined;
 
-  const [voterPasswordHash, adminPasswordHash] = await Promise.all([
-    data.voterPassword ? hashPassword(data.voterPassword) : Promise.resolve(undefined),
-    data.adminPassword ? hashPassword(data.adminPassword) : Promise.resolve(undefined),
-  ]);
-
-  await updateVoting(id, {
-    slug: data.slug,
+  await updateVoting(current.id, {
     name: data.name,
     shortName: data.shortName,
     description: data.description,
@@ -59,7 +51,6 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
     active: data.active,
     publicAccess: data.publicAccess,
     voterPasswordHash,
-    adminPasswordHash,
   });
 
   return NextResponse.json({ ok: true });
