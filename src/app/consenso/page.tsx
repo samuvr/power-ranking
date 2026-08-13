@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/user-auth";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import {
+  computeDeviation,
   computeDeviationLeaveOneOut,
   topOverratedUnderrated,
   type DeviationEntry,
@@ -61,22 +62,27 @@ export default async function ConsensoPage() {
     ]),
   );
 
-  // Comparativa con el ranking del usuario. La desviación se calcula "leave
-  // one out" (consensus sin su propio voto) para evitar el sesgo de
-  // auto-comparación, igual que en el panel de admin — aunque la lista de
-  // arriba siga pintando el consensus en vivo con todos los votos incluidos.
+  // Comparativa con el ranking del usuario contra el consensus que se está
+  // pintando (con todos los votos incluidos, el suyo también), para que el
+  // resto de la página (diffs, Clavados, Mayor distancia, over/underrated)
+  // cuadre con las posiciones que ve en la lista de arriba.
   const deviation =
-    consensus && myRanking
-      ? computeDeviationLeaveOneOut(
-          myRanking.positions,
-          rankings.filter((r) => r.id !== myRanking.id).map((r) => r.positions),
-        )
-      : null;
+    consensus && myRanking ? computeDeviation(myRanking.positions, consensus.ranking) : null;
   const diffByTeam = new Map<string, DeviationEntry>(
     deviation?.perTeam.map((e) => [e.teamAbbr, e]) ?? [],
   );
   const exactHits = deviation?.perTeam.filter((e) => e.diff === 0).length ?? 0;
   const { overrated, underrated } = topOverratedUnderrated(deviation?.perTeam ?? [], 3);
+
+  // Solo la "Desviación media" se calcula "leave one out" (consensus sin su
+  // propio voto), para evitar el sesgo de auto-comparación, igual que en el
+  // panel de admin.
+  const meanDeviationLeaveOneOut = myRanking
+    ? computeDeviationLeaveOneOut(
+        myRanking.positions,
+        rankings.filter((r) => r.id !== myRanking.id).map((r) => r.positions),
+      ).meanAbsDeviation
+    : null;
 
   const lastUpdate = rankings.reduce<string | null>((acc, r) => {
     return !acc || new Date(r.updated_at) > new Date(acc) ? r.updated_at : acc;
@@ -133,7 +139,7 @@ export default async function ConsensoPage() {
                   Desviación media
                 </p>
                 <p className="font-mono text-2xl font-bold">
-                  {fmt(deviation.meanAbsDeviation)}
+                  {fmt(meanDeviationLeaveOneOut ?? deviation.meanAbsDeviation)}
                 </p>
                 <p className="text-[11px] text-muted">puestos frente al consensus</p>
               </div>
