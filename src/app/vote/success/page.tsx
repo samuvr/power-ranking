@@ -97,7 +97,7 @@ export default async function SuccessPage({ searchParams }: { searchParams: Sear
           href="/vote"
           className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
         >
-          Seguir editando
+          Volver a la página principal
         </Link>
         <Link
           href="/historico"
