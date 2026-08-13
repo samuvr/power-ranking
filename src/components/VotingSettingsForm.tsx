@@ -148,11 +148,14 @@ export function VotingSettingsForm({ voting }: Props) {
           checked={publicAccess}
           onChange={(e) => setPublicAccess(e.target.checked)}
         />
-        Acceso público (sin contraseña de votante)
+        Registro abierto (sin contraseña de la comunidad)
       </label>
 
       {!publicAccess && (
-        <Field label="Contraseña de votante" hint="Déjala vacía para no cambiarla">
+        <Field
+          label="Contraseña de la comunidad"
+          hint="Se pide al crear cuenta. Déjala vacía para no cambiarla"
+        >
           <input
             type="text"
             value={voterPassword}

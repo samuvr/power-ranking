@@ -6,10 +6,17 @@ Guidance for AI assistants (and humans) working in this repository.
 
 **Team Power Rankings** is a Next.js web app where users build and share their
 personal Power Ranking of the 32 NFL 2026 teams. There is exactly **one
-voting** ("NFL Alicante"): voters land on `/`, type name + email + the voting
-password and go straight to the ranking builder. An admin panel computes a
-**global consensus ranking** from all submissions using an iterative bottom‑up
-algorithm.
+voting** ("NFL Alicante"): people create an **account** (name + email +
+password, gated by the community password) on `/`, and from then on they log
+in, reorder their saved ranking by drag & drop and save it again. An admin
+panel computes a **global consensus ranking** from all submissions using an
+iterative bottom‑up algorithm.
+
+The admin freezes the state of the voting into named **screenshots** ("Week 1",
+"Post‑Cortes Training Camp"). Each screenshot stores every included user's
+ranking plus the consensus computed at that moment, and becomes the baseline
+for the **evolution arrows** (▲ green / ▼ red / `=` grey) shown next to every
+team in the web UI and in the generated share images.
 
 This project is a fork of [QBRankings](https://github.com/samuvr/qbrankings),
 adapted so the rankable entity is a **team** (`src/data/teams.ts`) instead of
@@ -33,7 +40,8 @@ English.
 - **Tailwind CSS 4** (via `@tailwindcss/postcss`, no `tailwind.config`)
 - **Vercel Postgres** (Neon) through `@vercel/postgres` (tagged-template `sql`)
 - **`next/og`** (Satori) for server-generated share images (PNG)
-- **`jose`** for JWT cookies; **`bcryptjs`** for the voter password hash
+- **`@dnd-kit`** (core + sortable) for the drag & drop ranking builder
+- **`jose`** for JWT cookies; **`bcryptjs`** for user and community passwords
 - **`zod` v4** for all input validation
 - **Vitest** for unit tests
 - Path alias: `@/*` → `./src/*`
@@ -63,41 +71,55 @@ Copy `.env.example` → `.env.local`. Key variables:
 - `SESSION_SECRET` — JWT signing secret, **min 16 chars** or auth throws.
 - `NEXT_PUBLIC_APP_URL` — used for absolute share/image URLs.
 
-Per-voting passwords are **not** env vars anymore — they live hashed in the
-`votings` table. The `VOTING_PASSWORD_*` entries in `.env.example` are legacy.
+The community password is **not** an env var — it lives hashed in the
+`votings` table (`voter_password_hash`, editable in `/admin/ajustes`) and is
+only asked for when creating an account. The `VOTING_PASSWORD_*` entries in
+`.env.example` are legacy.
 
 ## Repository layout
 
 ```
 src/
   app/                         # Next.js App Router (routes = folders)
-    page.tsx / HomeForm.tsx    # landing: name + email + voting password
+    page.tsx / AuthForms.tsx   # landing: login / register tabs
     layout.tsx, globals.css
     vote/
-      page.tsx                 # the ranking builder (tap team → slot, reorder)
-      success/                 # shows generated share image
+      page.tsx                 # the ranking builder (drag & drop, preloaded)
+      success/                 # share image + biggest movers
+    perfil/                    # account settings, streak, mean deviation
+    historico/                 # screenshot list, detail, entries, comparador
+    equipos/                   # team index + per-team evolution chart
     admin/
       page.tsx, LoginForm.tsx  # admin login + global ranking dashboard
       AdminRankingView.tsx     # dashboard UI (list / stream, PNG exports)
+      screenshots/             # create / rename / delete + participation panel
+      usuarios/                # accounts + manual password reset
       ajustes/                 # edit the single voting's settings
       votantes/[voterId]/      # individual voter deviation view
     api/
+      auth/                    # register, login, logout, profile PATCH
       rankings/                # POST submit, GET .../[id]/image (og)
-      voting/access/           # voter password check → sets cookie
-      admin/                   # login, rankings (+story/round images),
+      snapshots/[id]/          # frozen consensus + entry images
+      admin/                   # login, rankings (+story/round/movers images),
+                               # screenshots CRUD, user password reset,
                                # voters image, voting settings PATCH
   components/                  # TeamCard, RankingBoard, RankingSlot, TeamMark,
-                               # VotingLogo, VotingSettingsForm
+                               # EvolutionBadge, RankingListView, VotingLogo,
+                               # VotingSettingsForm
   data/                        # teams.ts, power-metric.ts (+ power-metric.test.ts)
   lib/
     db/client.ts               # all SQL queries + row types
     db/migrate.ts              # schema creation + legacy migration + seeding
     auth.ts                    # admin JWT cookie + ADMIN_PASSWORD check
-    voting-access.ts           # voter JWT cookie + bcrypt helpers
+    user-auth.ts               # user JWT cookie + getCurrentUser()
+    voting-access.ts           # bcrypt hash/verify helpers
+    cookie-names.ts            # cookie names (no deps: imported by middleware)
+    og/                        # shared fonts, palette and 1080×1920 layout
     schemas.ts                 # zod schemas for every input
     ranking-algorithm.ts       # consensus algorithm (+ .test.ts)
     ranking-deviation.ts       # voter vs consensus deviation
-  middleware.ts                # route protection + cookie hygiene
+    ranking-evolution.ts       # deltas vs a screenshot (+ .test.ts)
+  middleware.ts                # route protection
 public/                        # static voting logo
 ```
 
@@ -113,11 +135,41 @@ first, oldest row as fallback — and `toPublicVoting()` strips the hash
 (`VotingPublic`). Nothing in the app creates or deletes votings; `migrate.ts`
 seeds the row and removes leftovers.
 
+### Users (`users` table)
+`full_name`, unique lowercase `email`, bcrypt `password_hash`. Registration
+(`/api/auth/register`) requires the voting's community password unless
+`public_access`. Email is the identity and is **not** editable; the name is,
+and `updateUserName()` propagates it to the user's ranking (it shows in the
+share image). There is no email delivery, so password recovery is manual:
+`/admin/usuarios` sets a temporary password.
+
 ### Rankings (`rankings` table)
-One row per `(email, voting)` (unique constraint → upsert on submit). Stores
-`positions` as a JSONB array of team `abbr`s, ordered position 1 (best) … N
-(worst). `voting` is a UUID FK → `votings(id)`; the API fills it from
-`getVoting()`, clients never send it.
+One row per `(email, voting)` (unique constraint → upsert on save) plus a
+`user_id` FK. Stores `positions` as a JSONB array of team `abbr`s, ordered
+position 1 (best) … N (worst). `voting` is a UUID FK → `votings(id)`; the API
+fills `voting`, `user_id`, `full_name` and `email` from the session — clients
+only send `positions`. Each user keeps exactly **one live ranking** that they
+edit over time; the history lives in the screenshots.
+
+Rows predating accounts have `user_id = NULL` and still count towards the
+consensus; registering with that email adopts them (`adoptDataByEmail`).
+
+### Screenshots (`snapshots` + `snapshot_entries`)
+A screenshot freezes the voting under a name unique per voting ("Week 1").
+`snapshots.consensus` is the ordered array of `abbr`s computed at creation time
+and **never recomputed**; `snapshot_entries` holds a copy of each included
+user's `positions`. By default only rankings saved after the previous
+screenshot are included — the admin form shows the live count and can include
+everyone with a checkbox. Deleting a screenshot cascades its entries and
+changes everyone's evolution arrows.
+
+### Evolution (`src/lib/ranking-evolution.ts`)
+Pure helpers over two ordered arrays: `delta = previousPosition - position`, so
+positive = moved up. `null` means there is no earlier data and nothing is
+drawn. The baseline is the most recent screenshot **in which that ranking
+appears** — for a user who skipped a week that may be several screenshots back.
+`topMovers()` feeds the "Movers" image and the movers columns;
+`teamPositionHistory()` feeds the per-team chart.
 
 ### Teams (`src/data/teams.ts`)
 Static list of the 32 NFL teams (`abbr`, `name`, `location`, colors),
@@ -153,20 +205,23 @@ rounds, or tie-breaking, update `ranking-algorithm.test.ts` accordingly.
 ## Auth & access model
 
 Two independent layers, both JWT cookies signed with `SESSION_SECRET`
-(HS256, 12h expiry, `httpOnly`, `secure` in prod):
+(HS256, `httpOnly`, `secure` in prod):
 
-1. **Admin** (`lib/auth.ts`, cookie `admin_session`): password
+1. **Admin** (`lib/auth.ts`, cookie `admin_session`, 12h): password
    `ADMIN_PASSWORD`, constant-time compared. Full access to the panel.
-2. **Voter** (`lib/voting-access.ts`, cookie `voter_access_<votingId>`): the
-   voting's `voter_password` (skipped when `public_access`). Required to
-   submit a ranking.
+2. **User** (`lib/user-auth.ts`, cookie `user_session`, 30 days): `sub` is the
+   user id; `getCurrentUser()` resolves it against the DB. Required to save a
+   ranking and to browse the histórico.
 
-`middleware.ts` enforces: everything under `/admin` and `/api/admin` requires
-the admin session, except the `/admin` page itself (it renders the login form)
-and `/api/admin/login`. Admin API handlers re-check `isAdminAuthenticated()`
-as defense in depth. On every visit to `/`, the middleware **deletes all
-`voter_access_*` cookies** (plus legacy `voting_admin_*` ones) so each flow
-re-prompts for the password.
+`middleware.ts` enforces: `/vote`, `/historico`, `/equipos` and `/perfil` need
+a user (or admin) session; `/` redirects to `/vote` when already logged in;
+everything under `/admin` and `/api/admin` requires the admin session, except
+the `/admin` page itself (it renders the login form) and `/api/admin/login`.
+Route handlers re-check the session as defense in depth. Cookie names live in
+`lib/cookie-names.ts` because the middleware runs on Edge and must not pull in
+the DB client.
+
+Login answers with the same message for unknown email and wrong password.
 
 ## Conventions to follow
 
@@ -194,7 +249,9 @@ re-prompts for the password.
 ## Database migrations
 
 `src/lib/db/migrate.ts` is the single, **idempotent** migration entry point
-(`npm run db:migrate`). It creates the `votings` and `rankings` tables, seeds
+(`npm run db:migrate`). It creates the `votings`, `rankings`, `users`,
+`snapshots` and `snapshot_entries` tables, adds `rankings.user_id` (linking any
+pre-existing ranking to an account with the same email), seeds
 the NFL Alicante row with a random placeholder password (printed to stdout —
 change it in `/admin/ajustes`), migrates pre-existing rows from the old
 `voting_type` enum to the UUID FK, drops the now unused `position` /

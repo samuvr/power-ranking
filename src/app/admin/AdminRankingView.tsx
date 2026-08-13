@@ -6,6 +6,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { findTeamByAbbr } from "@/data/teams";
 import { computeMetricRanking } from "@/data/power-metric";
 import { TeamMark } from "@/components/TeamMark";
+import { EvolutionBadge } from "@/components/EvolutionBadge";
 import type { VotingPublic } from "@/lib/db/client";
 import type { GlobalRankingResult } from "@/lib/ranking-algorithm";
 
@@ -20,12 +21,18 @@ type Voter = {
   rankPosition: number;
 };
 
+export type SnapshotOption = { id: string; name: string };
+
 type Props = {
   voting: VotingPublic;
   result: GlobalRankingResult;
   initialMode: Mode;
   initialRound: number;
   voters: Voter[];
+  /** Puestos ganados por equipo respecto al screenshot base. */
+  deltas: Record<string, number | null>;
+  snapshots: SnapshotOption[];
+  baseSnapshot: SnapshotOption | null;
 };
 
 export function AdminRankingView({
@@ -34,6 +41,9 @@ export function AdminRankingView({
   initialMode,
   initialRound,
   voters,
+  deltas,
+  snapshots,
+  baseSnapshot,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -111,7 +121,35 @@ export function AdminRankingView({
         </button>
       </div>
 
-      <ExportActions fileSlug={voting.slug} totalRounds={totalRounds} />
+      <ExportActions
+        fileSlug={voting.slug}
+        totalRounds={totalRounds}
+        baseSnapshotId={baseSnapshot?.id ?? null}
+      />
+
+      {snapshots.length > 0 && (
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted">Comparar evolución con</span>
+          <select
+            value={baseSnapshot?.id ?? ""}
+            onChange={(e) => {
+              const params = new URLSearchParams(searchParams.toString());
+              if (e.target.value) params.set("base", e.target.value);
+              else params.delete("base");
+              const qs = params.toString();
+              router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+            }}
+            className="rounded-lg border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-foreground"
+          >
+            <option value="">Sin comparar</option>
+            {snapshots.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label className="flex items-center gap-2 text-sm">
         <input
@@ -131,7 +169,12 @@ export function AdminRankingView({
       </label>
 
       {mode === "list" ? (
-        <RankingList result={result} showMetric={showMetric} />
+        <RankingList
+          result={result}
+          showMetric={showMetric}
+          deltas={deltas}
+          since={baseSnapshot?.name ?? null}
+        />
       ) : (
         <RankingStream
           result={result}
@@ -139,6 +182,8 @@ export function AdminRankingView({
           totalRounds={totalRounds}
           accent={voting.accent}
           showMetric={showMetric}
+          deltas={deltas}
+          since={baseSnapshot?.name ?? null}
           onPrev={() => setRoundAndSync(Math.max(0, round - 1))}
           onNext={() => setRoundAndSync(Math.min(totalRounds - 1, round + 1))}
         />
@@ -201,14 +246,18 @@ export function AdminRankingView({
 function ExportActions({
   fileSlug,
   totalRounds,
+  baseSnapshotId,
 }: {
   // Solo se usa para nombrar los ficheros descargados.
   fileSlug: string;
   totalRounds: number;
+  baseSnapshotId: string | null;
 }) {
   const [exportingStory, setExportingStory] = useState(false);
   const [exportingCarousel, setExportingCarousel] = useState(false);
+  const [exportingMovers, setExportingMovers] = useState(false);
   const [carouselProgress, setCarouselProgress] = useState(0);
+  const baseQuery = baseSnapshotId ? `?base=${baseSnapshotId}` : "";
 
   async function downloadBlob(url: string, filename: string) {
     const res = await fetch(url);
@@ -225,11 +274,25 @@ function ExportActions({
     setExportingStory(true);
     try {
       await downloadBlob(
-        "/api/admin/rankings/story",
+        `/api/admin/rankings/story${baseQuery}`,
         `story-${fileSlug}-ranking-global.png`,
       );
     } finally {
       setExportingStory(false);
+    }
+  }
+
+  async function handleMovers() {
+    setExportingMovers(true);
+    try {
+      await downloadBlob(
+        `/api/admin/rankings/movers${baseQuery}`,
+        `movers-${fileSlug}.png`,
+      );
+    } catch {
+      window.alert("Hace falta al menos un screenshot con el que comparar.");
+    } finally {
+      setExportingMovers(false);
     }
   }
 
@@ -258,7 +321,7 @@ function ExportActions({
       <button
         type="button"
         onClick={handleStory}
-        disabled={exportingStory || exportingCarousel}
+        disabled={exportingStory || exportingCarousel || exportingMovers}
         className="font-subhead flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-xs uppercase tracking-wide transition hover:border-foreground disabled:opacity-50"
       >
         {exportingStory ? (
@@ -272,8 +335,23 @@ function ExportActions({
       </button>
       <button
         type="button"
+        onClick={handleMovers}
+        disabled={exportingStory || exportingCarousel || exportingMovers}
+        className="font-subhead flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-xs uppercase tracking-wide transition hover:border-foreground disabled:opacity-50"
+      >
+        {exportingMovers ? (
+          <>
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Generando…
+          </>
+        ) : (
+          "Exportar Movers"
+        )}
+      </button>
+      <button
+        type="button"
         onClick={handleCarousel}
-        disabled={exportingStory || exportingCarousel}
+        disabled={exportingStory || exportingCarousel || exportingMovers}
         className="font-subhead flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-xs uppercase tracking-wide transition hover:border-foreground disabled:opacity-50"
       >
         {exportingCarousel ? (
@@ -292,9 +370,13 @@ function ExportActions({
 function RankingList({
   result,
   showMetric,
+  deltas,
+  since,
 }: {
   result: GlobalRankingResult;
   showMetric: boolean;
+  deltas: Record<string, number | null>;
+  since: string | null;
 }) {
   const historyByTeam = useMemo(() => {
     const map = new Map<string, Array<{ roundIndex: number; points: number }>>();
@@ -353,6 +435,11 @@ function RankingList({
                 )}
               </div>
             </div>
+            <EvolutionBadge
+              delta={deltas[entry.teamAbbr] ?? null}
+              since={since ?? undefined}
+              size="sm"
+            />
             {showMetric && (
               <MetricBadge teamAbbr={entry.teamAbbr} votePosition={entry.finalPosition} />
             )}
@@ -369,6 +456,8 @@ function RankingStream({
   totalRounds,
   accent,
   showMetric,
+  deltas,
+  since,
   onPrev,
   onNext,
 }: {
@@ -377,6 +466,8 @@ function RankingStream({
   totalRounds: number;
   accent: string;
   showMetric: boolean;
+  deltas: Record<string, number | null>;
+  since: string | null;
   onPrev: () => void;
   onNext: () => void;
 }) {
@@ -482,6 +573,11 @@ function RankingStream({
                   )}
                 </div>
               </div>
+              <EvolutionBadge
+                delta={deltas[entry.teamAbbr] ?? null}
+                since={since ?? undefined}
+                size="sm"
+              />
               {showMetric && (
                 <MetricBadge teamAbbr={entry.teamAbbr} votePosition={entry.finalPosition} />
               )}

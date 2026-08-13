@@ -1,6 +1,6 @@
 import { getVotingPublic } from "@/lib/db/client";
 import { VotingLogo } from "@/components/VotingLogo";
-import { HomeForm } from "./HomeForm";
+import { AuthForms } from "./AuthForms";
 
 export const dynamic = "force-dynamic";
 
@@ -31,20 +31,21 @@ export default async function Home() {
           Un proyecto de {voting?.name ?? "NFL Alicante"}
         </p>
         <p className="mt-3 text-sm text-muted">
-          Ordena los 32 equipos y ayuda a crear el ranking global de tu comunidad.
+          Ordena los 32 equipos, sigue tu evolución semana a semana y ayuda a crear
+          el ranking global de tu comunidad.
         </p>
       </header>
 
-      {voting && voting.active ? (
-        <HomeForm publicAccess={voting.public_access} />
+      {voting ? (
+        <AuthForms publicAccess={voting.public_access} />
       ) : (
         <p className="rounded-xl border border-dashed border-border bg-surface p-5 text-center text-sm text-muted">
-          La votación está cerrada ahora mismo.
+          La votación no está disponible ahora mismo.
         </p>
       )}
 
       <footer className="mt-10 text-center text-xs text-muted">
-        <p>Reenviar con el mismo email sobrescribe tu ranking anterior.</p>
+        <p>Tu cuenta guarda tu ranking y todo tu histórico de screenshots.</p>
         <div className="mt-5 flex justify-center gap-5">
           <a
             href="https://x.com/nfl_alicante"

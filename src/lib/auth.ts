@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { ADMIN_COOKIE_NAME as COOKIE_NAME } from "@/lib/cookie-names";
 
-const COOKIE_NAME = "admin_session";
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12; // 12h
 
 function getSecretKey(): Uint8Array {
@@ -61,4 +61,4 @@ export function checkAdminPassword(input: string): boolean {
   return mismatch === 0;
 }
 
-export const ADMIN_COOKIE_NAME = COOKIE_NAME;
+export { COOKIE_NAME as ADMIN_COOKIE_NAME };

@@ -68,6 +68,70 @@ async function ensureRankingsTable() {
   await sql`CREATE INDEX IF NOT EXISTS rankings_voting_idx ON rankings (voting);`;
 }
 
+async function ensureUsersTable() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS users (
+      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      full_name     TEXT NOT NULL,
+      email         TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `;
+}
+
+// Cada ranking pasa a pertenecer a una cuenta. Se deja NULL en los rankings
+// heredados de la época sin cuentas: los adopta el registro con ese email.
+async function ensureRankingsUserColumn() {
+  await sql`ALTER TABLE rankings ADD COLUMN IF NOT EXISTS user_id UUID;`;
+  await sql`
+    UPDATE rankings r SET user_id = u.id
+    FROM users u WHERE u.email = r.email AND r.user_id IS NULL;
+  `;
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE rankings ADD CONSTRAINT rankings_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS rankings_user_idx ON rankings (user_id);`;
+}
+
+async function ensureSnapshotTables() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS snapshots (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      voting      UUID NOT NULL REFERENCES votings(id) ON DELETE RESTRICT,
+      name        TEXT NOT NULL,
+      consensus   JSONB NOT NULL,
+      entry_count INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (voting, name)
+    );
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS snapshots_voting_idx ON snapshots (voting, created_at DESC);`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS snapshot_entries (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      snapshot_id UUID NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+      user_id     UUID REFERENCES users(id) ON DELETE SET NULL,
+      full_name   TEXT NOT NULL,
+      email       TEXT NOT NULL,
+      positions   JSONB NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS snapshot_entries_snapshot_idx
+      ON snapshot_entries (snapshot_id);
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS snapshot_entries_user_idx ON snapshot_entries (user_id);
+  `;
+}
+
 async function rankingsTableExists(): Promise<boolean> {
   const r = await sql<{ exists: boolean }>`
     SELECT EXISTS (
@@ -186,6 +250,10 @@ async function migrate() {
   } else if (isLegacy) {
     await migrateLegacyRankings();
   }
+
+  await ensureUsersTable();
+  await ensureRankingsUserColumn();
+  await ensureSnapshotTables();
 
   const keeperId = await getKeeperVotingId();
   if (keeperId) await removeExtraVotings(keeperId);

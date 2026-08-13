@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { getRankingsByVoting, getVoting, toPublicVoting } from "@/lib/db/client";
+import {
+  getRankingsByVoting,
+  getVoting,
+  listSnapshots,
+  toPublicVoting,
+} from "@/lib/db/client";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import { computeDeviationLeaveOneOut } from "@/lib/ranking-deviation";
+import { computeEvolution } from "@/lib/ranking-evolution";
 import { getAllTeams } from "@/data/teams";
 import { LoginForm } from "./LoginForm";
 import { AdminRankingView } from "./AdminRankingView";
 
-type Search = Promise<{ next?: string; mode?: string; round?: string }>;
+type Search = Promise<{ next?: string; mode?: string; round?: string; base?: string }>;
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +38,26 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const voting = await getVoting();
   if (!voting) notFound();
 
-  const rows = await getRankingsByVoting(voting.id);
+  const [rows, snapshots] = await Promise.all([
+    getRankingsByVoting(voting.id),
+    listSnapshots(voting.id),
+  ]);
   const result = computeGlobalRanking(rows.map((r) => r.positions));
   const teamCount = getAllTeams().length;
+
+  // Base de la evolución: el screenshot elegido o, por defecto, el último.
+  const baseSnapshot =
+    (search.base ? snapshots.find((s) => s.id === search.base) : snapshots[0]) ?? null;
+  const consensusPositions = [...result.ranking]
+    .sort((a, b) => a.finalPosition - b.finalPosition)
+    .map((entry) => entry.teamAbbr);
+  const deltas: Record<string, number | null> = {};
+  for (const evolution of computeEvolution(
+    consensusPositions,
+    baseSnapshot?.consensus ?? null,
+  )) {
+    deltas[evolution.teamAbbr] = evolution.delta;
+  }
 
   const initialMode = search.mode === "stream" ? "stream" : "list";
   const initialRound = Math.max(
@@ -57,12 +80,26 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             {result.totalSubmissions} envíos · {teamCount} equipos en 7 rondas
           </p>
         </div>
-        <Link
-          href="/admin/ajustes"
-          className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
-        >
-          Ajustes
-        </Link>
+        <nav className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/screenshots"
+            className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
+          >
+            Screenshots
+          </Link>
+          <Link
+            href="/admin/usuarios"
+            className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
+          >
+            Usuarios
+          </Link>
+          <Link
+            href="/admin/ajustes"
+            className="font-subhead rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
+          >
+            Ajustes
+          </Link>
+        </nav>
       </header>
 
       {result.totalSubmissions === 0 ? (
@@ -75,6 +112,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           result={result}
           initialMode={initialMode}
           initialRound={initialRound}
+          deltas={deltas}
+          snapshots={snapshots.map((s) => ({ id: s.id, name: s.name }))}
+          baseSnapshot={
+            baseSnapshot ? { id: baseSnapshot.id, name: baseSnapshot.name } : null
+          }
           voters={rows
             .map((r) => ({
               id: r.id,
