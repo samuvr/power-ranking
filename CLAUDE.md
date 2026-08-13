@@ -103,7 +103,7 @@ src/
       admin/                   # login, rankings (+story/round/movers images),
                                # screenshots CRUD, user password reset,
                                # voters image, voting settings PATCH
-  components/                  # TeamCard, RankingBoard, RankingSlot, TeamMark,
+  components/                  # RankingBoard, RankingSlot, TeamMark,
                                # EvolutionBadge, RankingListView, VotingLogo,
                                # VotingSettingsForm
   data/                        # teams.ts, power-metric.ts (+ power-metric.test.ts)
