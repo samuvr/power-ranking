@@ -86,6 +86,7 @@ src/
     vote/
       page.tsx                 # the ranking builder (drag & drop, preloaded)
       success/                 # share image + biggest movers
+    consenso/                  # consensus en vivo vs el ranking del usuario
     perfil/                    # account settings, streak, mean deviation
     historico/                 # screenshot list, detail, entries, comparador
     equipos/                   # team index + per-team evolution chart
@@ -213,8 +214,8 @@ Two independent layers, both JWT cookies signed with `SESSION_SECRET`
    user id; `getCurrentUser()` resolves it against the DB. Required to save a
    ranking and to browse the histórico.
 
-`middleware.ts` enforces: `/vote`, `/historico`, `/equipos` and `/perfil` need
-a user (or admin) session; `/` redirects to `/vote` when already logged in;
+`middleware.ts` enforces: `/vote`, `/consenso`, `/historico`, `/equipos` and
+`/perfil` need a user (or admin) session; `/` redirects to `/vote` when already logged in;
 everything under `/admin` and `/api/admin` requires the admin session, except
 the `/admin` page itself (it renders the login form) and `/api/admin/login`.
 Route handlers re-check the session as defense in depth. Cookie names live in

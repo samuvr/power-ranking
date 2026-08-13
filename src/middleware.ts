@@ -7,6 +7,7 @@ export const config = {
   matcher: [
     "/",
     "/vote/:path*",
+    "/consenso",
     "/historico/:path*",
     "/equipos/:path*",
     "/perfil",
@@ -55,6 +56,7 @@ export async function middleware(request: NextRequest) {
   // Zona de usuario registrado. El admin también puede entrar para revisar.
   if (
     pathname.startsWith("/vote") ||
+    pathname === "/consenso" ||
     pathname.startsWith("/historico") ||
     pathname.startsWith("/equipos") ||
     pathname === "/perfil"
