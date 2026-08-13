@@ -7,7 +7,7 @@ import {
   getVoting,
   toPublicVoting,
 } from "@/lib/db/client";
-import { TOTAL_TEAMS } from "@/data/teams";
+import { getTeamAbbrs } from "@/data/teams";
 import { getCurrentUser } from "@/lib/user-auth";
 
 export const dynamic = "force-dynamic";
@@ -37,13 +37,14 @@ export default async function VotePage() {
       ? savedAtMs <= new Date(latestSnapshot.created_at).getTime()
       : false;
 
+  // Quien todavía no tiene ranking empieza con los 32 equipos en el orden por
+  // defecto: ya no hay columna de equipos sin colocar que haya que vaciar.
   return (
     <RankingBoard
       voting={toPublicVoting(voting)}
       user={{ id: user.id, fullName: user.full_name }}
-      initialPositions={
-        ranking?.positions ?? Array.from({ length: TOTAL_TEAMS }, () => null)
-      }
+      initialPositions={ranking?.positions ?? getTeamAbbrs()}
+      hasSavedRanking={!!ranking}
       savedAt={ranking ? new Date(ranking.updated_at).toISOString() : null}
       previousPositions={lastEntry?.positions ?? null}
       previousLabel={lastEntry?.snapshot_name ?? null}

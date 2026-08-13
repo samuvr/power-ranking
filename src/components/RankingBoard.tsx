@@ -21,15 +21,12 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { getAllTeams, findTeamByAbbr, TOTAL_TEAMS, type Team } from "@/data/teams";
+import { getTeamAbbrs, findTeamByAbbr, TOTAL_TEAMS } from "@/data/teams";
 import type { VotingPublic } from "@/lib/db/client";
 import { computeEvolution, evolutionByTeam } from "@/lib/ranking-evolution";
-import { TeamCard } from "./TeamCard";
 import { RankingSlot } from "./RankingSlot";
 import { VotingLogo } from "./VotingLogo";
 import { TeamMark } from "./TeamMark";
-
-type Tab = "pool" | "ranking";
 
 type StoredDraft = {
   savedAt: number;
@@ -37,13 +34,36 @@ type StoredDraft = {
 };
 
 const draftKey = (userId: string) => `tpr:draft:${userId}`;
-const EMPTY_ID_PREFIX = "__empty__";
+
+/**
+ * Deja siempre una lista con los 32 equipos: quita repetidos y desconocidos y
+ * añade al final los que falten. Cubre borradores antiguos (con huecos) y
+ * rankings guardados antes de que la lista fuese siempre completa.
+ */
+function normalizePositions(input: readonly (string | null)[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const abbr of input) {
+    if (!abbr || seen.has(abbr) || !findTeamByAbbr(abbr)) continue;
+    seen.add(abbr);
+    out.push(abbr);
+  }
+  for (const abbr of getTeamAbbrs()) {
+    if (!seen.has(abbr)) out.push(abbr);
+  }
+  return out;
+}
+
+const samePositions = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((abbr, i) => abbr === b[i]);
 
 type Props = {
   voting: VotingPublic;
   user: { id: string; fullName: string };
-  /** Ranking guardado (o huecos vacíos si aún no hay ninguno). */
-  initialPositions: (string | null)[];
+  /** Ranking guardado, o el orden por defecto si el usuario aún no tiene. */
+  initialPositions: string[];
+  /** false cuando el orden inicial es la semilla y no un ranking del usuario. */
+  hasSavedRanking: boolean;
   /** Momento del último guardado, para saber si el borrador local es más nuevo. */
   savedAt: string | null;
   /** Puestos del usuario en el último screenshot en el que aparece. */
@@ -58,6 +78,7 @@ export function RankingBoard({
   voting,
   user,
   initialPositions,
+  hasSavedRanking,
   savedAt,
   previousPositions,
   previousLabel,
@@ -65,13 +86,14 @@ export function RankingBoard({
   votingActive,
 }: Props) {
   const router = useRouter();
-  const allTeams = useMemo(() => getAllTeams(), []);
   const votingMeta = voting;
 
-  const [positions, setPositions] = useState<(string | null)[]>(initialPositions);
-  const [tab, setTab] = useState<Tab>(
-    initialPositions.some((p) => p === null) ? "pool" : "ranking",
+  const savedPositions = useMemo(
+    () => normalizePositions(initialPositions),
+    [initialPositions],
   );
+
+  const [positions, setPositions] = useState<string[]>(savedPositions);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -90,13 +112,9 @@ export function RankingBoard({
       if (raw) {
         const draft = JSON.parse(raw) as StoredDraft;
         const serverAt = savedAt ? new Date(savedAt).getTime() : 0;
-        if (
-          Array.isArray(draft.positions) &&
-          draft.positions.length === TOTAL_TEAMS &&
-          draft.savedAt > serverAt
-        ) {
+        if (Array.isArray(draft.positions) && draft.savedAt > serverAt) {
           // eslint-disable-next-line react-hooks/set-state-in-effect
-          setPositions(draft.positions);
+          setPositions(normalizePositions(draft.positions));
         }
       }
     } catch {
@@ -115,54 +133,20 @@ export function RankingBoard({
     }
   }, [positions, user.id, hydrated]);
 
-  const placedSet = useMemo(
-    () => new Set(positions.filter((v): v is string => !!v)),
-    [positions],
-  );
-  const pool = useMemo(
-    () => allTeams.filter((t) => !placedSet.has(t.abbr)),
-    [allTeams, placedSet],
-  );
-  const placedCount = placedSet.size;
-  const complete = placedCount === TOTAL_TEAMS;
+  // "Sin guardar": o nunca ha guardado, o ha movido algo desde el último guardado.
+  const dirty = !hasSavedRanking || !samePositions(positions, savedPositions);
 
   // Evolución en vivo: se recalcula según arrastras.
   const deltaByTeam = useMemo(() => {
     if (!previousPositions) return null;
-    const placed = positions.filter((v): v is string => !!v);
-    return evolutionByTeam(computeEvolution(placed, previousPositions));
+    return evolutionByTeam(computeEvolution(positions, previousPositions));
   }, [positions, previousPositions]);
-
-  const sortableIds = useMemo(
-    () => positions.map((p, idx) => p ?? `${EMPTY_ID_PREFIX}${idx}`),
-    [positions],
-  );
-
-  const placeTeam = useCallback((teamAbbr: string) => {
-    setPositions((cur) => {
-      const idx = cur.findIndex((v) => v === null);
-      if (idx === -1) return cur;
-      const next = [...cur];
-      next[idx] = teamAbbr;
-      return next;
-    });
-    setTab("ranking");
-  }, []);
 
   const swap = useCallback((a: number, b: number) => {
     setPositions((cur) => {
       if (a < 0 || b < 0 || a >= cur.length || b >= cur.length) return cur;
       const next = [...cur];
       [next[a], next[b]] = [next[b], next[a]];
-      return next;
-    });
-  }, []);
-
-  const removeAt = useCallback((index: number) => {
-    setPositions((cur) => {
-      // Se quita el equipo y el resto sube: el hueco queda al final.
-      const next = cur.filter((_, i) => i !== index);
-      next.push(null);
       return next;
     });
   }, []);
@@ -176,19 +160,19 @@ export function RankingBoard({
       setDragging(null);
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const from = sortableIds.indexOf(String(active.id));
-      const to = sortableIds.indexOf(String(over.id));
+      const from = positions.indexOf(String(active.id));
+      const to = positions.indexOf(String(over.id));
       if (from === -1 || to === -1) return;
       // Mover e insertar: los equipos intermedios se desplazan un puesto.
       setPositions((cur) => arrayMove(cur, from, to));
     },
-    [sortableIds],
+    [positions],
   );
 
   const handleSubmit = useCallback(async () => {
     setError(null);
-    if (!complete) {
-      setError("Tienes que colocar los 32 equipos");
+    if (positions.length !== TOTAL_TEAMS) {
+      setError(`Tienes que ordenar los ${TOTAL_TEAMS} equipos`);
       return;
     }
 
@@ -197,7 +181,7 @@ export function RankingBoard({
       const res = await fetch("/api/rankings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ positions: positions as string[] }),
+        body: JSON.stringify({ positions }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -215,7 +199,7 @@ export function RankingBoard({
       setError(msg);
       setSubmitting(false);
     }
-  }, [complete, positions, router, user.id]);
+  }, [positions, router, user.id]);
 
   const draggingTeam = dragging ? findTeamByAbbr(dragging) : undefined;
 
@@ -246,22 +230,11 @@ export function RankingBoard({
           </div>
           <div className="text-right">
             <p className="font-subhead text-[10px] uppercase tracking-wide text-muted">
-              Progreso
+              Estado
             </p>
-            <p className="font-mono text-base font-bold">
-              {placedCount.toString().padStart(2, "0")} / {TOTAL_TEAMS}
+            <p className="font-subhead text-sm leading-tight">
+              {dirty ? "Sin guardar" : "Guardado"}
             </p>
-          </div>
-        </div>
-        <div className="mx-auto mt-2 max-w-3xl">
-          <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2">
-            <div
-              className="h-full transition-all"
-              style={{
-                width: `${(placedCount / TOTAL_TEAMS) * 100}%`,
-                background: votingMeta.accent,
-              }}
-            />
           </div>
         </div>
       </header>
@@ -289,6 +262,13 @@ export function RankingBoard({
           </p>
         )}
 
+        {!hasSavedRanking && (
+          <p className="mb-4 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
+            Este es el orden de partida con los {TOTAL_TEAMS} equipos. Colócalos a tu
+            gusto y guarda tu ranking.
+          </p>
+        )}
+
         {previousLabel && (
           <p className="mb-4 text-[11px] text-muted">
             Las flechas comparan con <strong>{previousLabel}</strong> y se actualizan
@@ -302,112 +282,54 @@ export function RankingBoard({
           </p>
         )}
 
-        {/* Tabs (mobile) */}
-        <div className="mb-3 grid grid-cols-2 overflow-hidden rounded-xl border border-border bg-surface lg:hidden">
-          <button
-            type="button"
-            onClick={() => setTab("pool")}
-            className={`font-subhead px-3 py-2 text-xs uppercase tracking-wide transition ${
-              tab === "pool" ? "bg-surface-2 text-foreground" : "text-muted"
-            }`}
+        <section aria-label="Mi ranking">
+          <h2 className="font-subhead mb-2 text-[11px] uppercase tracking-wide text-muted">
+            Arrastra por el asa ⠿ o usa ↑ ↓ para reordenar (1 = mejor, {TOTAL_TEAMS} =
+            peor)
+          </h2>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setDragging(null)}
           >
-            Disponibles · {pool.length}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("ranking")}
-            className={`font-subhead px-3 py-2 text-xs uppercase tracking-wide transition ${
-              tab === "ranking" ? "bg-surface-2 text-foreground" : "text-muted"
-            }`}
-          >
-            Mi ranking · {placedCount}/{TOTAL_TEAMS}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {/* Pool */}
-          <section
-            className={`${tab === "pool" ? "block" : "hidden"} lg:block`}
-            aria-label="Equipos disponibles"
-          >
-            <h2 className="font-subhead mb-2 text-[11px] uppercase tracking-wide text-muted">
-              Toca un equipo para añadirlo al siguiente puesto vacío
-            </h2>
-            <ul className="space-y-2">
-              {pool.length === 0 && (
-                <li className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted">
-                  Has colocado todos los equipos.
-                </li>
-              )}
-              {pool.map((team) => (
-                <li key={team.abbr}>
-                  <TeamCard team={team} onTap={() => placeTeam(team.abbr)} />
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          {/* Ranking */}
-          <section
-            className={`${tab === "ranking" ? "block" : "hidden"} lg:block`}
-            aria-label="Mi ranking"
-          >
-            <h2 className="font-subhead mb-2 text-[11px] uppercase tracking-wide text-muted">
-              Arrastra por el asa ⠿ para reordenar (1 = mejor, 32 = peor)
-            </h2>
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              onDragCancel={() => setDragging(null)}
-            >
-              <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-                <ol className="space-y-2">
-                  {positions.map((teamAbbr, idx) => {
-                    const team: Team | null = teamAbbr
-                      ? findTeamByAbbr(teamAbbr) ?? null
-                      : null;
-                    return (
-                      <li key={sortableIds[idx]}>
-                        <RankingSlot
-                          sortableId={sortableIds[idx]}
-                          position={idx + 1}
-                          team={team}
-                          canMoveUp={idx > 0 && !!team}
-                          canMoveDown={
-                            idx < TOTAL_TEAMS - 1 && !!team && !!positions[idx + 1]
-                          }
-                          delta={
-                            teamAbbr
-                              ? deltaByTeam?.get(teamAbbr)?.delta ?? null
-                              : null
-                          }
-                          since={previousLabel ?? undefined}
-                          onMoveUp={() => swap(idx, idx - 1)}
-                          onMoveDown={() => swap(idx, idx + 1)}
-                          onRemove={() => removeAt(idx)}
-                        />
-                      </li>
-                    );
-                  })}
-                </ol>
-              </SortableContext>
-              <DragOverlay>
-                {draggingTeam ? (
-                  <div className="flex items-center gap-2 rounded-xl border-2 bg-surface px-2 py-2 shadow-lg"
-                    style={{ borderColor: votingMeta.accent }}
-                  >
-                    <TeamMark abbr={draggingTeam.abbr} size={36} />
-                    <p className="truncate text-sm font-semibold">
-                      {draggingTeam.location} {draggingTeam.name}
-                    </p>
-                  </div>
-                ) : null}
-              </DragOverlay>
-            </DndContext>
-          </section>
-        </div>
+            <SortableContext items={positions} strategy={verticalListSortingStrategy}>
+              <ol className="space-y-2">
+                {positions.map((teamAbbr, idx) => {
+                  const team = findTeamByAbbr(teamAbbr);
+                  if (!team) return null;
+                  return (
+                    <li key={teamAbbr}>
+                      <RankingSlot
+                        position={idx + 1}
+                        team={team}
+                        canMoveUp={idx > 0}
+                        canMoveDown={idx < positions.length - 1}
+                        delta={deltaByTeam?.get(teamAbbr)?.delta ?? null}
+                        since={previousLabel ?? undefined}
+                        onMoveUp={() => swap(idx, idx - 1)}
+                        onMoveDown={() => swap(idx, idx + 1)}
+                      />
+                    </li>
+                  );
+                })}
+              </ol>
+            </SortableContext>
+            <DragOverlay>
+              {draggingTeam ? (
+                <div className="flex items-center gap-2 rounded-xl border-2 bg-surface px-2 py-2 shadow-lg"
+                  style={{ borderColor: votingMeta.accent }}
+                >
+                  <TeamMark abbr={draggingTeam.abbr} size={36} />
+                  <p className="truncate text-sm font-semibold">
+                    {draggingTeam.location} {draggingTeam.name}
+                  </p>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </section>
       </div>
 
       {/* Sticky submit */}
@@ -421,15 +343,11 @@ export function RankingBoard({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!complete || submitting || !votingActive}
+            disabled={submitting || !votingActive}
             className="font-subhead w-full rounded-xl px-4 py-3 text-base uppercase tracking-wide text-white transition active:scale-[0.98] disabled:opacity-40"
             style={{ background: votingMeta.accent }}
           >
-            {submitting
-              ? "Guardando…"
-              : complete
-                ? "Guardar ranking"
-                : `Coloca los ${TOTAL_TEAMS - placedCount} restantes`}
+            {submitting ? "Guardando…" : "Guardar ranking"}
           </button>
         </div>
       </footer>
