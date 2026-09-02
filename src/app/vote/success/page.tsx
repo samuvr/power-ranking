@@ -2,16 +2,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   getLatestSnapshotEntryByEmail,
-  getRankingById,
+  getRankingWithPreviousById,
   getVoting,
 } from "@/lib/db/client";
 import { findTeamByAbbr } from "@/data/teams";
 import { computeEvolution, topMovers } from "@/lib/ranking-evolution";
 import { EvolutionBadge } from "@/components/EvolutionBadge";
 import { TeamMark } from "@/components/TeamMark";
+import { RankingVideoExport } from "@/components/RankingVideoExport";
 import { ShareActions } from "./ShareActions";
+import { slugify } from "@/lib/slug";
 
 export const dynamic = "force-dynamic";
+
+const shortDateFmt = new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short" });
 
 type Search = Promise<{ id?: string }>;
 
@@ -20,7 +24,7 @@ export default async function SuccessPage({ searchParams }: { searchParams: Sear
   if (!id) notFound();
   const voting = await getVoting();
   if (!voting) notFound();
-  const ranking = await getRankingById(id);
+  const ranking = await getRankingWithPreviousById(id);
   if (!ranking || ranking.voting !== voting.id) notFound();
 
   const previous = await getLatestSnapshotEntryByEmail(ranking.email, ranking.voting);
@@ -31,6 +35,17 @@ export default async function SuccessPage({ searchParams }: { searchParams: Sear
   // nuevo (cambian las flechas): ambas cosas entran en la URL.
   const version = `${new Date(ranking.updated_at).getTime()}-${previous?.snapshot_id ?? "0"}`;
   const imageUrl = `/api/rankings/${id}/image?v=${version}`;
+
+  // Punto de partida del vídeo: la versión anterior de su propio ranking y,
+  // si es la primera vez que lo reordena, su ranking del último screenshot.
+  const videoFrom = ranking.previous_positions ?? previous?.positions ?? null;
+  const videoFromLabel = ranking.previous_positions
+    ? `Tu ranking del ${shortDateFmt.format(
+        new Date(ranking.previous_saved_at ?? ranking.created_at),
+      )}`
+    : previous
+      ? previous.snapshot_name
+      : "";
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col items-center px-5 py-10">
@@ -91,6 +106,26 @@ export default async function SuccessPage({ searchParams }: { searchParams: Sear
       </div>
 
       <ShareActions imageUrl={imageUrl} fullName={ranking.full_name} votingName={voting.name} />
+
+      {videoFrom && (
+        <RankingVideoExport
+          fromPositions={videoFrom}
+          toPositions={ranking.positions}
+          accent={voting.accent}
+          logoUrl={voting.logo_url}
+          copy={{
+            eyebrow: `${voting.name} · 2026`,
+            title: `Ranking de ${ranking.full_name}`,
+            fromLabel: videoFromLabel,
+            toLabel: shortDateFmt.format(new Date(ranking.updated_at)),
+            footerLeft: `Evolución vs ${videoFromLabel}`,
+            footerRight: voting.name,
+            logoFallback: voting.short_name,
+          }}
+          fileBase={`video-${voting.slug}-${slugify(ranking.full_name)}`}
+          shareText={`Cómo ha cambiado mi top 32 de la NFL 2026 · ${voting.name}`}
+        />
+      )}
 
       <nav className="mt-8 flex flex-wrap justify-center gap-2">
         <Link

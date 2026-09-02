@@ -35,6 +35,16 @@ export type RankingRow = {
   updated_at: string;
 };
 
+/**
+ * El ranking con la versión inmediatamente anterior del mismo votante.
+ * Solo la piden las vistas que animan el cambio, para no arrastrar 32 abbrs
+ * de más en las consultas que calculan el consensus.
+ */
+export type RankingWithPreviousRow = RankingRow & {
+  previous_positions: string[] | null;
+  previous_saved_at: string | null;
+};
+
 export type UserRow = {
   id: string;
   full_name: string;
@@ -135,6 +145,9 @@ export async function upsertRanking(input: {
   positions: string[];
 }): Promise<{ id: string }> {
   const positionsJson = JSON.stringify(input.positions);
+  // Al reordenar se guarda la versión anterior en `previous_positions`: es el
+  // punto de partida del vídeo de evolución. Reenviar el mismo orden no la
+  // pisa, para no dejar un vídeo en el que no se mueve nadie.
   const result = await sql<{ id: string }>`
     INSERT INTO rankings (full_name, email, user_id, voting, positions)
     VALUES (${input.fullName}, ${input.email}, ${input.userId}, ${input.voting}, ${positionsJson}::jsonb)
@@ -142,6 +155,14 @@ export async function upsertRanking(input: {
     DO UPDATE SET
       full_name = EXCLUDED.full_name,
       user_id = COALESCE(EXCLUDED.user_id, rankings.user_id),
+      previous_positions = CASE
+        WHEN rankings.positions IS DISTINCT FROM EXCLUDED.positions THEN rankings.positions
+        ELSE rankings.previous_positions
+      END,
+      previous_saved_at = CASE
+        WHEN rankings.positions IS DISTINCT FROM EXCLUDED.positions THEN rankings.updated_at
+        ELSE rankings.previous_saved_at
+      END,
       positions = EXCLUDED.positions,
       updated_at = now()
     RETURNING id
@@ -152,6 +173,19 @@ export async function upsertRanking(input: {
 export async function getRankingById(id: string): Promise<RankingRow | null> {
   const result = await sql<RankingRow>`
     SELECT id, full_name, email, user_id, voting, positions, created_at, updated_at
+    FROM rankings
+    WHERE id = ${id}
+    LIMIT 1
+  `;
+  return result.rows[0] ?? null;
+}
+
+export async function getRankingWithPreviousById(
+  id: string,
+): Promise<RankingWithPreviousRow | null> {
+  const result = await sql<RankingWithPreviousRow>`
+    SELECT id, full_name, email, user_id, voting, positions,
+           previous_positions, previous_saved_at, created_at, updated_at
     FROM rankings
     WHERE id = ${id}
     LIMIT 1

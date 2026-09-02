@@ -9,6 +9,8 @@ import {
 import { findTeamByAbbr } from "@/data/teams";
 import { computeEvolution, topMovers } from "@/lib/ranking-evolution";
 import { RankingListView } from "@/components/RankingListView";
+import { RankingVideoExport } from "@/components/RankingVideoExport";
+import { slugify } from "@/lib/slug";
 import { EvolutionBadge } from "@/components/EvolutionBadge";
 import { TeamMark } from "@/components/TeamMark";
 
@@ -73,6 +75,28 @@ export default async function SnapshotPage({ params }: { params: Params }) {
       >
         Ver imagen del consensus
       </a>
+
+      {previous && (
+        <div id="video" className="mb-6 scroll-mt-6">
+          <RankingVideoExport
+            fromPositions={previous.consensus}
+            toPositions={snapshot.consensus}
+            accent={voting.accent}
+            logoUrl={voting.logo_url}
+            copy={{
+              eyebrow: `Consensus · ${dateFmt.format(new Date(snapshot.created_at))}`,
+              title: snapshot.name,
+              fromLabel: previous.name,
+              toLabel: snapshot.name,
+              footerLeft: `${snapshot.entry_count} rankings · evolución vs ${previous.name}`,
+              footerRight: voting.name,
+              logoFallback: voting.short_name,
+            }}
+            fileBase={`video-${voting.slug}-${slugify(snapshot.name)}`}
+            shareText={`${snapshot.name} · consensus de ${voting.name}`}
+          />
+        </div>
+      )}
 
       {(risers.length > 0 || fallers.length > 0) && (
         <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">

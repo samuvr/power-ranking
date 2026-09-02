@@ -131,7 +131,8 @@ export function ScreenshotsView({
         </h2>
         <p className="mt-1 text-sm text-muted">
           Congela el ranking de cada participante y el consensus del momento. Es la
-          base con la que se calculan las flechas de evolución.
+          base con la que se calculan las flechas de evolución. Al crearlo podrás
+          generar el vídeo de 10 s con el movimiento respecto al screenshot anterior.
         </p>
 
         <form onSubmit={handleCreate} className="mt-4 flex flex-col gap-3">
@@ -214,7 +215,7 @@ export function ScreenshotsView({
           </p>
         ) : (
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
-            {snapshots.map((snapshot) => (
+            {snapshots.map((snapshot, index) => (
               <li
                 key={snapshot.id}
                 className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
@@ -233,6 +234,15 @@ export function ScreenshotsView({
                   >
                     Ver
                   </Link>
+                  {/* El más antiguo no tiene screenshot anterior con el que animar. */}
+                  {index < snapshots.length - 1 && (
+                    <Link
+                      href={`/historico/${snapshot.id}#video`}
+                      className="font-subhead rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-[11px] uppercase tracking-wide transition hover:border-foreground"
+                    >
+                      Vídeo
+                    </Link>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleRename(snapshot)}
