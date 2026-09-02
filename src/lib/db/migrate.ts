@@ -66,6 +66,10 @@ async function ensureRankingsTable() {
     );
   `;
   await sql`CREATE INDEX IF NOT EXISTS rankings_voting_idx ON rankings (voting);`;
+  // Versión anterior del ranking del votante: punto de partida del vídeo de
+  // evolución que se ofrece al guardar.
+  await sql`ALTER TABLE rankings ADD COLUMN IF NOT EXISTS previous_positions JSONB;`;
+  await sql`ALTER TABLE rankings ADD COLUMN IF NOT EXISTS previous_saved_at TIMESTAMPTZ;`;
 }
 
 async function ensureUsersTable() {

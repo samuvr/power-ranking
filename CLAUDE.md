@@ -40,6 +40,7 @@ English.
 - **Tailwind CSS 4** (via `@tailwindcss/postcss`, no `tailwind.config`)
 - **Vercel Postgres** (Neon) through `@vercel/postgres` (tagged-template `sql`)
 - **`next/og`** (Satori) for server-generated share images (PNG)
+- **Canvas 2D + `MediaRecorder`** (browser-side) for the 10 s evolution video
 - **`@dnd-kit`** (core + sortable) for the drag & drop ranking builder
 - **`jose`** for JWT cookies; **`bcryptjs`** for user and community passwords
 - **`zod` v4** for all input validation
@@ -102,6 +103,7 @@ src/
     api/
       auth/                    # register, login, logout, profile PATCH
       rankings/                # POST submit, GET .../[id]/image (og)
+      team-logo/[abbr]/        # proxy del escudo ESPN (mismo origen, para el vídeo)
       snapshots/[id]/          # frozen consensus + entry images
       admin/                   # login, rankings (+story/round/movers images),
                                # screenshots CRUD, user password reset,
@@ -111,7 +113,8 @@ src/
                                # VotingSettingsForm, RankingComparison
                                # (a reference ranking with your own positions
                                #  next to it: the consensus in /consenso,
-                               #  another user's in /usuarios/[userId])
+                               #  another user's in /usuarios/[userId]),
+                               # RankingVideoExport (vídeo de 10 s)
   data/                        # teams.ts, power-metric.ts (+ power-metric.test.ts)
   lib/
     db/client.ts               # all SQL queries + row types
@@ -125,6 +128,10 @@ src/
     ranking-algorithm.ts       # consensus algorithm (+ .test.ts)
     ranking-deviation.ts       # voter vs consensus deviation
     ranking-evolution.ts       # deltas vs a screenshot (+ .test.ts)
+    slug.ts                    # slug para nombrar ficheros (+ .test.ts)
+    video/animation.ts         # línea de tiempo del vídeo (+ .test.ts)
+    video/scene.ts             # dibujo de un fotograma en canvas 2D
+    video/recorder.ts          # canvas → MediaRecorder → Blob (solo cliente)
   middleware.ts                # route protection
 public/                        # static voting logo
 ```
@@ -159,6 +166,11 @@ edit over time; the history lives in the screenshots.
 
 Rows predating accounts have `user_id = NULL` and still count towards the
 consensus; registering with that email adopts them (`adoptDataByEmail`).
+
+Each save also keeps the version it replaces in `previous_positions` /
+`previous_saved_at` (only when the order actually changed): it is the starting
+point of the evolution video on `/vote/success`. `getRankingWithPreviousById()`
+is the only query that reads those columns.
 
 ### Screenshots (`snapshots` + `snapshot_entries`)
 A screenshot freezes the voting under a name unique per voting ("Week 1").
@@ -207,6 +219,28 @@ position received → how often → second-worst → how often → total positio
 
 The algorithm is **pure and fully unit-tested** — if you change scoring,
 rounds, or tie-breaking, update `ranking-algorithm.test.ts` accordingly.
+
+## The evolution video (`src/lib/video/`)
+
+A 10 s, 1080×1920 video that starts with the previous ranking and moves every
+team to its new position. Offered on `/vote/success` (previous save → ranking
+just saved) and on `/historico/[snapshotId]` (previous screenshot's consensus →
+this screenshot's), linked from the admin screenshot list.
+
+- **It is rendered client-side.** `RankingVideoExport` paints each frame on a
+  `<canvas>` and records `canvas.captureStream()` with `MediaRecorder` for the
+  10 real seconds. There is no server-side encoding (no ffmpeg on Vercel), so
+  the tab has to stay visible while it records. MP4 where the browser supports
+  it, WebM otherwise.
+- `animation.ts` is **pure and unit-tested**: timeline constants, `buildTracks`
+  (from/to positions + delta per team), easing and `positionAt`. Change the
+  timings there, not in the drawing code.
+- `scene.ts` draws one frame with the same palette as the Satori images
+  (`lib/og/theme.ts`): header, fixed 01→32 slot column and one moving card per
+  team.
+- Team logos come from `/api/team-logo/[abbr]`, a same-origin proxy of the ESPN
+  logo: a canvas that has drawn a cross-origin image is tainted and cannot be
+  captured. Only the 32 known abbrs are proxied.
 
 ## Auth & access model
 
@@ -257,7 +291,8 @@ Login answers with the same message for unknown email and wrong password.
 `src/lib/db/migrate.ts` is the single, **idempotent** migration entry point
 (`npm run db:migrate`). It creates the `votings`, `rankings`, `users`,
 `snapshots` and `snapshot_entries` tables, adds `rankings.user_id` (linking any
-pre-existing ranking to an account with the same email), seeds
+pre-existing ranking to an account with the same email), adds
+`rankings.previous_positions` / `previous_saved_at`, seeds
 the NFL Alicante row with a random placeholder password (printed to stdout —
 change it in `/admin/ajustes`), migrates pre-existing rows from the old
 `voting_type` enum to the UUID FK, drops the now unused `position` /

@@ -13,6 +13,7 @@ adaptado para rankear equipos en lugar de quarterbacks.
 - Next.js 16 (App Router) + TypeScript + Tailwind CSS 4
 - Vercel Postgres (Neon) con `@vercel/postgres`
 - Generación de imagen con `next/og` (Satori)
+- Generación de vídeo en el navegador (canvas + `MediaRecorder`)
 - Auth admin con cookie JWT (`jose`) + `ADMIN_PASSWORD` en `.env`
 - Acceso de votantes con cookie JWT + contraseña hasheada (`bcryptjs`) en BD
 
@@ -52,10 +53,33 @@ npm run lint         # eslint
    autosave en `localStorage`.
 4. `POST /api/rankings` — upsert por `(email, voting)`.
 5. `/vote/success?id=…` — muestra la imagen PNG generada por
-   `/api/rankings/[id]/image`.
+   `/api/rankings/[id]/image` y permite generar el vídeo de 10 s con el
+   movimiento respecto al ranking anterior.
 6. `/admin` — login con `ADMIN_PASSWORD`; tras auth muestra el ranking global.
    `/admin/ajustes` edita nombre, colores, logo, apertura de la votación y la
    contraseña de votante.
+
+## Vídeo de evolución (10 s)
+
+Tanto al guardar un ranking (`/vote/success`) como en la ficha de un
+screenshot (`/historico/[snapshotId]`) hay un botón que genera un vídeo
+vertical 1080×1920 de 10 segundos: arranca con los equipos en sus puestos
+anteriores, cada uno viaja hasta su nuevo puesto y termina en el ranking
+actual con las flechas de evolución.
+
+- El punto de partida es la versión anterior del propio ranking
+  (`rankings.previous_positions`, que se guarda en cada reordenación) y, si es
+  la primera, el ranking congelado del último screenshot. En un screenshot es
+  el consensus del screenshot anterior.
+- Se genera **en el navegador**: `src/lib/video/scene.ts` pinta cada fotograma
+  en un canvas y `MediaRecorder` graba su stream durante los 10 s reales. Sale
+  MP4 donde el navegador lo soporta y WebM en el resto. No hace falta ffmpeg ni
+  ningún servicio externo, pero hay que dejar la pestaña visible mientras se
+  graba.
+- Los escudos se sirven vía `/api/team-logo/[abbr]` (proxy del mismo origen):
+  un canvas con imágenes de otro dominio queda contaminado y no se puede
+  capturar.
+- La línea de tiempo (`src/lib/video/animation.ts`) es pura y está testeada.
 
 ## Datos de equipos
 
