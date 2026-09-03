@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Un push nuevo sobre la misma rama cancela la ejecución anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, tests y build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # El build no toca la base de datos (todas las páginas son
+      # `force-dynamic`), pero `SESSION_SECRET` tiene que existir y medir al
+      # menos 16 caracteres o `lib/auth.ts` revienta al evaluarse.
+      SESSION_SECRET: ci-placeholder-session-secret
+      ADMIN_PASSWORD: ci-placeholder
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      # `next build` es el único typecheck del repo: no hay script aparte.
+      - name: Build
+        run: npm run build
