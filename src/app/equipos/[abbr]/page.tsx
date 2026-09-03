@@ -4,6 +4,12 @@ import { getRankingsByVoting, getVoting, listSnapshots } from "@/lib/db/client";
 import { findTeamByAbbr, TOTAL_TEAMS } from "@/data/teams";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import { teamPositionHistory } from "@/lib/ranking-evolution";
+import {
+  computeDispersion,
+  dispersionByTeam,
+  positionHistogram,
+  type TeamDispersion,
+} from "@/lib/ranking-dispersion";
 import { EvolutionBadge } from "@/components/EvolutionBadge";
 import { TeamMark } from "@/components/TeamMark";
 
@@ -41,6 +47,15 @@ export default async function TeamPage({ params }: { params: Params }) {
     position: h.position,
     href: `/historico/${h.id}`,
   }));
+
+  // Cuánto os separa AHORA sobre este equipo: no es la historia del consensus,
+  // es el desacuerdo entre los votos guardados en este momento.
+  const allPositions = rows.map((r) => r.positions);
+  const dispersion: TeamDispersion | null =
+    rows.length > 0
+      ? (dispersionByTeam(computeDispersion(allPositions)).get(teamAbbr) ?? null)
+      : null;
+  const histogram = rows.length > 0 ? positionHistogram(allPositions, teamAbbr) : [];
 
   // Puesto en el consensus vivo, para cerrar la serie con el "ahora".
   let currentPosition: number | null = null;
@@ -112,6 +127,35 @@ export default async function TeamPage({ params }: { params: Params }) {
         <PositionChart points={points} accent={voting.accent} />
       )}
 
+      {dispersion && (
+        <section className="mt-8">
+          <h2 className="font-subhead mb-1 text-[11px] uppercase tracking-wide text-muted">
+            Cuánto os separa ahora mismo
+          </h2>
+          <p className="mb-3 text-[11px] text-muted">
+            Dónde coloca cada uno a este equipo en su ranking guardado. Dos equipos
+            pueden acabar en el mismo puesto del consensus siendo uno indiscutible
+            y el otro una pelea.
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Puesto más alto" value={`#${dispersion.best}`} />
+            <Stat label="Puesto más bajo" value={`#${dispersion.worst}`} />
+            <Stat label="Media" value={fmtNumber(dispersion.mean)} />
+            <Stat label="Dispersión" value={fmtNumber(dispersion.stdDev)} />
+          </div>
+          <p className="mt-2 text-[11px] text-muted">
+            {dispersion.spread === 0
+              ? `Los ${dispersion.votes} votos lo ponen exactamente en el mismo puesto.`
+              : `${dispersion.spread} ${
+                  dispersion.spread === 1 ? "puesto separa" : "puestos separan"
+                } al más y al menos entusiasta, sobre ${dispersion.votes} ${
+                  dispersion.votes === 1 ? "voto" : "votos"
+                }.`}
+          </p>
+          <DispersionHistogram bins={histogram} accent={voting.accent} />
+        </section>
+      )}
+
       {points.length > 0 && (
         <ul className="mt-6 divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
           {[...points].reverse().map((point, idx) => (
@@ -143,6 +187,9 @@ export default async function TeamPage({ params }: { params: Params }) {
     </main>
   );
 }
+
+const fmtNumber = (n: number) =>
+  n.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -215,3 +262,48 @@ function PositionChart({ points, accent }: { points: Point[]; accent: string }) 
   );
 }
 
+
+/**
+ * Reparto de los votos por tramos de puestos. Barras proporcionales al tramo
+ * más votado; sin escala numérica, solo la forma (¿una punta o dos?).
+ */
+function DispersionHistogram({
+  bins,
+  accent,
+}: {
+  bins: Array<{ from: number; to: number; count: number }>;
+  accent: string;
+}) {
+  const max = Math.max(...bins.map((b) => b.count), 0);
+  if (max === 0) return null;
+
+  return (
+    <div className="mt-3 rounded-xl border border-border bg-surface p-3">
+      <div className="flex h-28 items-end gap-1">
+        {bins.map((bin) => (
+          <div key={bin.from} className="flex flex-1 flex-col items-center justify-end gap-1">
+            <span className="font-mono text-[10px] text-muted">
+              {bin.count > 0 ? bin.count : ""}
+            </span>
+            <div
+              className="w-full rounded-t"
+              style={{
+                // Un voto solo nunca queda como una raya invisible.
+                height: `${Math.max(4, (bin.count / max) * 100)}%`,
+                backgroundColor: bin.count > 0 ? accent : "transparent",
+                opacity: bin.count > 0 ? 1 : 0.15,
+                border: bin.count > 0 ? "none" : "1px dashed currentColor",
+              }}
+            />
+            <span className="font-mono text-[9px] text-muted">
+              {bin.from}-{bin.to}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-center text-[10px] text-muted">
+        Votos por tramo de puesto
+      </p>
+    </div>
+  );
+}

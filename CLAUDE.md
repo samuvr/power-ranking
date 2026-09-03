@@ -50,7 +50,8 @@ English.
   no `coverage` script — run `npx vitest run --coverage`)
 - **PGlite** (`@electric-sql/pglite`, dev only) — Postgres compiled to WASM, so
   the migration tests run real SQL in-process with no server
-- Path alias: `@/*` → `./src/*`
+- Path alias: `@/*` → `./src/*` (declared in `tsconfig.json` and mirrored in
+  `vitest.config.ts`, so tested modules can import the way the app does)
 - `next.config.ts` only whitelists remote images: `a.espncdn.com`
   (`/i/teamlogos/nfl/500/**`, team logos) and `pbs.twimg.com`
   (`/profile_images/**`, arbitrary logo URLs pasted in `/admin/ajustes`)
@@ -156,6 +157,10 @@ src/
     ranking-algorithm.ts       # consensus algorithm (+ .test.ts)
     ranking-deviation.ts       # voter vs consensus deviation (+ .test.ts)
     ranking-evolution.ts       # deltas vs a screenshot (+ .test.ts)
+    ranking-dispersion.ts      # desacuerdo entre votantes por equipo
+                               # (+ .test.ts)
+    ranking-season.ts          # "mi temporada": podio y cambios de opinión
+                               # de un votante (+ .test.ts)
     slug.ts                    # slug para nombrar ficheros (+ .test.ts)
     video/animation.ts         # línea de tiempo del vídeo (+ .test.ts)
     video/scene.ts             # dibujo de un fotograma en canvas 2D
@@ -184,9 +189,9 @@ Every page below is an `async` server component with
 | `/historico/[snapshotId]` | user | frozen consensus + its share image + the evolution video (anchor `#video`) |
 | `/historico/[snapshotId]/[entryId]` | user | one participant's frozen ranking + its deviation from that screenshot's consensus |
 | `/historico/comparar?a=<id>&b=<id>` | user | any two screenshots side by side (defaults: the two most recent) |
-| `/equipos` | user | the 32 teams in live-consensus order with their arrows |
-| `/equipos/[abbr]` | user | that team's position screenshot by screenshot, closed with the live consensus |
-| `/perfil` | user | participation (X/Y screenshots), mean deviation, deviation per screenshot, name/password form |
+| `/equipos` | user | the 32 teams in live-consensus order with their arrows, plus the three most divisive and the three most agreed-on |
+| `/equipos/[abbr]` | user | that team's position screenshot by screenshot, closed with the live consensus, plus how far apart the voters are on it right now (best/worst/mean/σ + histogram) |
+| `/perfil` | user | participation (X/Y screenshots), mean deviation, deviation per screenshot, "mi temporada" (podium per screenshot + what you changed your mind about), name/password form |
 | `/admin` | admin | login form, or the global ranking dashboard |
 | `/admin/screenshots` | admin | create / rename / delete screenshots + participation panel |
 | `/admin/usuarios` | admin | accounts + manual password reset |
@@ -263,6 +268,24 @@ drawn. The baseline is the most recent screenshot **in which that ranking
 appears** — for a user who skipped a week that may be several screenshots back.
 `topMovers()` feeds the "Movers" image and the movers columns;
 `teamPositionHistory()` feeds the per-team chart.
+
+### Dispersion (`src/lib/ranking-dispersion.ts`)
+Pure helpers over the live rankings: for each team, the best and worst position
+anyone gave it, the mean, the median, the spread and the population standard
+deviation. It answers a question the consensus cannot — whether a team's
+position is agreed on or is the average of a fight. `mostDivisive()` /
+`mostAgreed()` feed the two cards on `/equipos`; `positionHistogram()` (8
+buckets of 4 positions) draws the bars on `/equipos/[abbr]`. Needs at least two
+rankings to say anything, so `/equipos` hides the cards below that.
+
+### A voter's season (`src/lib/ranking-season.ts`)
+The mirror image of the above, for a person instead of a team.
+`seasonTopSlices()` walks a voter's frozen rankings in chronological order
+(closed with their live one) and marks who entered and who dropped out of their
+top N — the first point has no `entered`/`left`, since there is nothing before
+it. `seasonChanges()` compares only the first and the last point, so it reads as
+"since you started"; `seasonBiggestChanges()` splits it into risers and fallers.
+Both feed the "Mi temporada" section of `/perfil`.
 
 ### Teams (`src/data/teams.ts`)
 Static list of the 32 NFL teams (`abbr`, `name`, `location`, colors),
@@ -376,10 +399,10 @@ would then depend on.
   can't load WOFF2; fonts are fetched as TTF. Image URLs are cache-busted by
   `updated_at`.
 - **Tests** live next to the code as `*.test.ts` and run under Vitest. Today
-  there are 9 files / 72 tests: `ranking-algorithm`, `ranking-deviation`,
-  `ranking-evolution`, `slug`, `video/animation`, `data/power-metric`,
-  `rate-limit`, `db/client` (only the pure `isUndefinedColumnError` helper) and
-  `db/migrations`.
+  there are 11 files / 97 tests: `ranking-algorithm`, `ranking-deviation`,
+  `ranking-evolution`, `ranking-dispersion`, `ranking-season`, `slug`,
+  `video/animation`, `data/power-metric`, `rate-limit`, `db/client` (only the
+  pure `isUndefinedColumnError` helper) and `db/migrations`.
 - **`db/migrations.test.ts` is the one test that runs SQL.** It does
   `vi.mock("@vercel/postgres", () => import("./test-db"))`, which swaps the
   driver for a PGlite-backed shim — real Postgres in WASM, in-process. So it
@@ -441,7 +464,9 @@ fastest way to see how the current shape was reached:
 Known rough edges, in case a change lands near them:
 
 - **`data/power-metric.ts` holds invented numbers.** The admin comparison works,
-  the data does not mean anything yet.
+  the data does not mean anything yet. When real results are wired in, note that
+  nflverse's `games.csv` calls the Rams `LA` and `teams.ts` calls them `LAR` —
+  every other abbreviation matches.
 - **No email delivery.** Password recovery is an admin typing a temporary one in
   `/admin/usuarios`; registration is gated by the community password instead of
   by verification.
