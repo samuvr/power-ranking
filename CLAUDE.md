@@ -104,6 +104,8 @@ src/
       page.tsx                 # the ranking builder (drag & drop, preloaded)
       success/                 # share image + biggest movers
     consenso/                  # consensus en vivo vs el ranking del usuario
+    realidad/                  # clasificación real de la NFL vs consensus
+                               # y ranking de acierto de cada votante
     perfil/                    # account settings + participación (X/Y
                                # screenshots) y desviación media e histórica
     usuarios/                  # user picker + any user's ranking vs your own
@@ -161,6 +163,9 @@ src/
                                # (+ .test.ts)
     ranking-season.ts          # "mi temporada": podio y cambios de opinión
                                # de un votante (+ .test.ts)
+    nfl-results.ts             # parseo del CSV de nflverse + clasificación
+                               # real (puro, + .test.ts)
+    nfl-standings.ts           # descarga del CSV y caché de 1 h (el IO)
     slug.ts                    # slug para nombrar ficheros (+ .test.ts)
     video/animation.ts         # línea de tiempo del vídeo (+ .test.ts)
     video/scene.ts             # dibujo de un fotograma en canvas 2D
@@ -183,6 +188,7 @@ Every page below is an `async` server component with
 | `/vote` | user | the 32-team drag & drop board, preloaded with the saved ranking (or the default order for a new account) + a "you haven't touched it since the last screenshot" warning |
 | `/vote/success?id=<rankingId>` | user | share image (`?v=<updated_at>-<snapshotId>`), top 3 risers/fallers and the evolution video |
 | `/consenso` | user | live consensus (recomputed on every request) vs your ranking |
+| `/realidad` | user | the real NFL standings for the season vs the consensus, plus a leaderboard of who is closest to reality |
 | `/usuarios` | user | list of accounts with their last save and how many screenshots they appear in (`listUsers`) |
 | `/usuarios/[userId]?snapshot=<id>` | user | that user's ranking vs yours — live, or both frozen versions from that screenshot |
 | `/historico` | user | screenshot list, marking the ones you took part in |
@@ -287,6 +293,36 @@ it. `seasonChanges()` compares only the first and the last point, so it reads as
 "since you started"; `seasonBiggestChanges()` splits it into risers and fallers.
 Both feed the "Mi temporada" section of `/perfil`.
 
+### Real results (`src/lib/nfl-results.ts` + `nfl-standings.ts`)
+The only data in the app that does not come from the voters. `nfl-standings.ts`
+downloads [nflverse](https://github.com/nflverse/nfldata)'s `data/games.csv`
+(one row per game since 1999, empty scores until played) and `nfl-results.ts`
+parses it and builds the standings — pure and unit-tested, so the CSV format is
+covered by tests rather than by hope.
+
+Four things that are easy to get wrong here:
+
+- **nflverse calls the Rams `LA`; `teams.ts` calls them `LAR`.** That is the
+  only mismatch in 2026, and `normalizeTeamAbbr()` is where it (plus the old
+  `OAK`/`SD`/`STL` relocations) is handled. A team the app does not know is
+  dropped, never rendered.
+- **Columns are located by name, not by position.** nflverse adds columns from
+  time to time and a positional parser reads the wrong field in silence.
+- **The CSV is over 2 MB, above Next's data-cache limit**, so the `fetch` is
+  `no-store` and what `unstable_cache` keeps (for an hour) is the computed
+  32-row result. Don't "fix" this by caching the fetch — it silently stops
+  caching anything. There is a second, in-process hourly memo behind
+  `unstable_cache` precisely because that failure would be mute and expensive
+  (a 2 MB download per page view); it also serves the last good copy when
+  GitHub is down.
+- **Standings order by win percentage** (a tie counts as half a win), breaking
+  ties by point differential, then points for, then abbr. It is a league-wide
+  ordering on purpose: it is what compares to a power ranking, not the real
+  conference/division standings.
+
+A failed download returns `null` and the page says so; zero games played is a
+separate state ("the season has not started"), not a table of zeros.
+
 ### Teams (`src/data/teams.ts`)
 Static list of the 32 NFL teams (`abbr`, `name`, `location`, colors),
 `teamLogoUrl()` resolves the live ESPN logo. `TOTAL_TEAMS` and
@@ -353,8 +389,8 @@ Two independent layers, both JWT cookies signed with `SESSION_SECRET`
    user id; `getCurrentUser()` resolves it against the DB. Required to save a
    ranking and to browse the histórico.
 
-`middleware.ts` enforces: `/vote`, `/consenso`, `/historico`, `/equipos`,
-`/usuarios` and `/perfil` need a user (or admin) session; `/` redirects to
+`middleware.ts` enforces: `/vote`, `/consenso`, `/realidad`, `/historico`,
+`/equipos`, `/usuarios` and `/perfil` need a user (or admin) session; `/` redirects to
 `/vote` when already logged in;
 everything under `/admin` and `/api/admin` requires the admin session, except
 the `/admin` page itself (it renders the login form) and `/api/admin/login`.
@@ -399,10 +435,10 @@ would then depend on.
   can't load WOFF2; fonts are fetched as TTF. Image URLs are cache-busted by
   `updated_at`.
 - **Tests** live next to the code as `*.test.ts` and run under Vitest. Today
-  there are 11 files / 97 tests: `ranking-algorithm`, `ranking-deviation`,
-  `ranking-evolution`, `ranking-dispersion`, `ranking-season`, `slug`,
-  `video/animation`, `data/power-metric`, `rate-limit`, `db/client` (only the
-  pure `isUndefinedColumnError` helper) and `db/migrations`.
+  there are 12 files / 119 tests: `ranking-algorithm`, `ranking-deviation`,
+  `ranking-evolution`, `ranking-dispersion`, `ranking-season`, `nfl-results`,
+  `slug`, `video/animation`, `data/power-metric`, `rate-limit`, `db/client`
+  (only the pure `isUndefinedColumnError` helper) and `db/migrations`.
 - **`db/migrations.test.ts` is the one test that runs SQL.** It does
   `vi.mock("@vercel/postgres", () => import("./test-db"))`, which swaps the
   driver for a PGlite-backed shim — real Postgres in WASM, in-process. So it
@@ -463,10 +499,14 @@ fastest way to see how the current shape was reached:
 
 Known rough edges, in case a change lands near them:
 
-- **`data/power-metric.ts` holds invented numbers.** The admin comparison works,
-  the data does not mean anything yet. When real results are wired in, note that
-  nflverse's `games.csv` calls the Rams `LA` and `teams.ts` calls them `LAR` —
-  every other abbreviation matches.
+- **`data/power-metric.ts` still holds invented numbers**, and is now redundant:
+  `/realidad` compares the consensus against actual results. The admin
+  checkbox that overlays it is the last thing using it.
+- **`/realidad` has nothing to show until the season starts.** As of the 2026
+  schedule nflverse publishes all 272 regular-season games with empty scores,
+  so the page renders its "the season has not started" state. That path is the
+  one that has been seen working; the populated one has only been exercised
+  against 2025 data in a scratch script.
 - **No email delivery.** Password recovery is an admin typing a temporary one in
   `/admin/usuarios`; registration is gated by the community password instead of
   by verification.
