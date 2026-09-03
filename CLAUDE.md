@@ -18,11 +18,13 @@ ranking plus the consensus computed at that moment, and becomes the baseline
 for the **evolution arrows** (▲ green / ▼ red / `=` grey) shown next to every
 team in the web UI and in the generated share images.
 
-This project is a fork of [QBRankings](https://github.com/samuvr/qbrankings),
-adapted so the rankable entity is a **team** (`src/data/teams.ts`) instead of
-a QB. Most of the app (voting flow, algorithm, DB layer, share images, admin
-dashboard) is unchanged from the original — only the entity being ranked and
-its rendering differ.
+This project started as a fork of
+[QBRankings](https://github.com/samuvr/qbrankings), adapted so the rankable
+entity is a **team** (`src/data/teams.ts`) instead of a QB. The inherited parts
+(consensus algorithm, DB layer, share images, admin dashboard) still look like
+the original, but everything built since — accounts, screenshots and evolution,
+`/consenso`, `/usuarios`, `/equipos` and the evolution video — is specific to
+this repo. Don't assume upstream behaviour: check the code here.
 
 The product copy and most code comments are in **Spanish**; keep new
 user‑facing strings and comments in Spanish to match. Code identifiers are in
@@ -36,7 +38,7 @@ English.
 
 ## Stack
 
-- **Next.js 16** (App Router) + **React 19** + **TypeScript** (strict)
+- **Next.js 16.2.6** (App Router) + **React 19.2.4** + **TypeScript** (strict)
 - **Tailwind CSS 4** (via `@tailwindcss/postcss`, no `tailwind.config`)
 - **Vercel Postgres** (Neon) through `@vercel/postgres` (tagged-template `sql`)
 - **`next/og`** (Satori) for server-generated share images (PNG)
@@ -44,8 +46,12 @@ English.
 - **`@dnd-kit`** (core + sortable) for the drag & drop ranking builder
 - **`jose`** for JWT cookies; **`bcryptjs`** for user and community passwords
 - **`zod` v4** for all input validation
-- **Vitest** for unit tests
+- **Vitest 4** for unit tests (`@vitest/coverage-v8` is installed, but there is
+  no `coverage` script — run `npx vitest run --coverage`)
 - Path alias: `@/*` → `./src/*`
+- `next.config.ts` only whitelists remote images: `a.espncdn.com`
+  (`/i/teamlogos/nfl/500/**`, team logos) and `pbs.twimg.com`
+  (`/profile_images/**`, arbitrary logo URLs pasted in `/admin/ajustes`)
 
 ## Commands
 
@@ -57,6 +63,7 @@ npm run lint         # eslint (eslint-config-next: core-web-vitals + typescript)
 npm test             # vitest run (one-shot)
 npm run test:watch   # vitest watch
 npm run db:migrate   # tsx --env-file=.env.local src/lib/db/migrate.ts (idempotent)
+npx vitest run src/lib/ranking-algorithm.test.ts   # a single test file
 ```
 
 Before committing, run `npm run lint` and `npm test`. There is no separate
@@ -74,8 +81,8 @@ Copy `.env.example` → `.env.local`. Key variables:
 
 The community password is **not** an env var — it lives hashed in the
 `votings` table (`voter_password_hash`, editable in `/admin/ajustes`) and is
-only asked for when creating an account. The `VOTING_PASSWORD_*` entries in
-`.env.example` are legacy.
+only asked for when creating an account. `.env.example` no longer lists any
+`VOTING_PASSWORD_*` entry, just a comment saying where the password lives.
 
 ## Repository layout
 
@@ -88,7 +95,8 @@ src/
       page.tsx                 # the ranking builder (drag & drop, preloaded)
       success/                 # share image + biggest movers
     consenso/                  # consensus en vivo vs el ranking del usuario
-    perfil/                    # account settings, streak, mean deviation
+    perfil/                    # account settings + participación (X/Y
+                               # screenshots) y desviación media e histórica
     usuarios/                  # user picker + any user's ranking vs your own
                                # (live, or ?snapshot=<id> for a frozen one)
     historico/                 # screenshot list, detail, entries, comparador
@@ -98,44 +106,85 @@ src/
       AdminRankingView.tsx     # dashboard UI (list / stream, PNG exports)
       screenshots/             # create / rename / delete + participation panel
       usuarios/                # accounts + manual password reset
-      ajustes/                 # edit the single voting's settings
+      ajustes/                 # edit the single voting's settings +
+                               # RunMigrationsPanel (POST /api/admin/migrate)
       votantes/[voterId]/      # individual voter deviation view
     api/
       auth/                    # register, login, logout, profile PATCH
       rankings/                # POST submit, GET .../[id]/image (og)
       team-logo/[abbr]/        # proxy del escudo ESPN (mismo origen, para el vídeo)
       snapshots/[id]/          # frozen consensus + entry images
-      admin/                   # login, rankings (+story/round/movers images),
-                               # screenshots CRUD, user password reset,
-                               # voters image, voting settings PATCH
+      admin/                   # login, migrate, rankings (+story/round/
+                               # movers images), screenshots CRUD, user
+                               # password reset, voters image,
+                               # voting settings PATCH
   components/                  # RankingBoard, RankingSlot, TeamMark,
                                # EvolutionBadge, RankingListView, VotingLogo,
                                # VotingSettingsForm, RankingComparison
                                # (a reference ranking with your own positions
                                #  next to it: the consensus in /consenso,
                                #  another user's in /usuarios/[userId]),
-                               # RankingVideoExport (vídeo de 10 s)
+                               # RankingVideoExport (vídeo de 10 s),
+                               # RunMigrationsPanel (botón de migraciones)
   data/                        # teams.ts, power-metric.ts (+ power-metric.test.ts)
   lib/
-    db/client.ts               # all SQL queries + row types
+    db/client.ts               # all SQL queries + row types (+ .test.ts)
     db/migrations.ts           # schema creation + legacy migration + seeding
     db/migrate.ts              # CLI entry point (npm run db:migrate)
     auth.ts                    # admin JWT cookie + ADMIN_PASSWORD check
     user-auth.ts               # user JWT cookie + getCurrentUser()
     voting-access.ts           # bcrypt hash/verify helpers
     cookie-names.ts            # cookie names (no deps: imported by middleware)
-    og/                        # shared fonts, palette and 1080×1920 layout
+    og/                        # fonts.ts (Google Fonts TTF + absolute URLs),
+                               # theme.ts (palette + 1080×1920) y
+                               # ranking-image.tsx (layout Satori compartido)
     schemas.ts                 # zod schemas for every input
     ranking-algorithm.ts       # consensus algorithm (+ .test.ts)
-    ranking-deviation.ts       # voter vs consensus deviation
+    ranking-deviation.ts       # voter vs consensus deviation (+ .test.ts)
     ranking-evolution.ts       # deltas vs a screenshot (+ .test.ts)
     slug.ts                    # slug para nombrar ficheros (+ .test.ts)
     video/animation.ts         # línea de tiempo del vídeo (+ .test.ts)
     video/scene.ts             # dibujo de un fotograma en canvas 2D
     video/recorder.ts          # canvas → MediaRecorder → Blob (solo cliente)
   middleware.ts                # route protection
-public/                        # static voting logo
 ```
+
+`public/` holds `nfl-alicante.jpg` (the seeded `logo_url` and the landing
+fallback) and `vikings.png`, a leftover from the fork that nothing references.
+
+## Route map (and the query params each one understands)
+
+Every page below is an `async` server component with
+`export const dynamic = "force-dynamic"`. "user" = user *or* admin session
+(the middleware accepts both).
+
+| Route | Who | What it renders |
+| --- | --- | --- |
+| `/` | anyone | login / register tabs (`AuthForms`); redirects to `/vote` with a session |
+| `/vote` | user | the 32-team drag & drop board, preloaded with the saved ranking (or the default order for a new account) + a "you haven't touched it since the last screenshot" warning |
+| `/vote/success?id=<rankingId>` | user | share image (`?v=<updated_at>-<snapshotId>`), top 3 risers/fallers and the evolution video |
+| `/consenso` | user | live consensus (recomputed on every request) vs your ranking |
+| `/usuarios` | user | list of accounts with their last save and how many screenshots they appear in (`listUsers`) |
+| `/usuarios/[userId]?snapshot=<id>` | user | that user's ranking vs yours — live, or both frozen versions from that screenshot |
+| `/historico` | user | screenshot list, marking the ones you took part in |
+| `/historico/[snapshotId]` | user | frozen consensus + its share image + the evolution video (anchor `#video`) |
+| `/historico/[snapshotId]/[entryId]` | user | one participant's frozen ranking + its deviation from that screenshot's consensus |
+| `/historico/comparar?a=<id>&b=<id>` | user | any two screenshots side by side (defaults: the two most recent) |
+| `/equipos` | user | the 32 teams in live-consensus order with their arrows |
+| `/equipos/[abbr]` | user | that team's position screenshot by screenshot, closed with the live consensus |
+| `/perfil` | user | participation (X/Y screenshots), mean deviation, deviation per screenshot, name/password form |
+| `/admin` | admin | login form, or the global ranking dashboard |
+| `/admin/screenshots` | admin | create / rename / delete screenshots + participation panel |
+| `/admin/usuarios` | admin | accounts + manual password reset |
+| `/admin/votantes/[voterId]` | admin | one voter's ranking vs the **leave-one-out** consensus |
+| `/admin/ajustes` | admin | voting settings + the migrations button |
+
+The admin dashboard reads three params: `?mode=list|stream`, `?round=<n>`
+(which round of the algorithm the stream view shows) and `?base=<snapshotId>`
+(which screenshot the evolution arrows compare against — the most recent one by
+default). It also has a client-side checkbox that overlays the
+`data/power-metric.ts` ranking, and buttons that download the Story, Movers and
+per-round PNGs from `/api/admin/rankings/*`.
 
 ## Core domain concepts
 
@@ -173,14 +222,25 @@ Each save also keeps the version it replaces in `previous_positions` /
 point of the evolution video on `/vote/success`. `getRankingWithPreviousById()`
 is the only query that reads those columns.
 
+Both queries **tolerate a database that has not been migrated yet**: if Postgres
+answers `42703` (`undefined_column`, detected by `isUndefinedColumnError()`,
+tested in `db/client.test.ts`) they log a warning and retry without those two
+columns, so saving a ranking never fails just because the deploy is missing the
+video feature. Keep that fallback in mind when adding columns: a query that uses
+a brand-new column and has no fallback breaks every user until someone runs the
+migration.
+
 ### Screenshots (`snapshots` + `snapshot_entries`)
 A screenshot freezes the voting under a name unique per voting ("Week 1").
 `snapshots.consensus` is the ordered array of `abbr`s computed at creation time
 and **never recomputed**; `snapshot_entries` holds a copy of each included
 user's `positions`. By default only rankings saved after the previous
 screenshot are included — the admin form shows the live count and can include
-everyone with a checkbox. Deleting a screenshot cascades its entries and
-changes everyone's evolution arrows.
+everyone with a checkbox (`includeAll` in `SnapshotCreateSchema`). The
+participation panel below the form lists who is up to date and who is not.
+Deleting a screenshot cascades its entries and changes everyone's evolution
+arrows. Every screenshot in `/admin/screenshots` links to its detail page and
+to `#video` (the evolution video of that screenshot's consensus).
 
 ### Evolution (`src/lib/ranking-evolution.ts`)
 Pure helpers over two ordered arrays: `delta = previousPosition - position`, so
@@ -200,8 +260,10 @@ unknown abbr; use `findTeamByAbbr` where the id may not (yet) be valid.
 ### Power metric data (`src/data/power-metric.ts`)
 Static point-differential values per team `abbr` (`null` = no data), used in
 the admin dashboard to compare consensus vs an objective metric. Uses
-competition ranking (1,2,2,4) for ties. Provisional/placeholder values —
-update with real season data.
+competition ranking (1,2,2,4) for ties. Rendered behind a checkbox in the admin
+dashboard, never in the public UI. **The 32 values are still placeholders**
+(hand-written point differentials, no real 2026 data) — update them before
+using the comparison for anything serious.
 
 ## The consensus algorithm (`src/lib/ranking-algorithm.ts`)
 
@@ -254,8 +316,9 @@ Two independent layers, both JWT cookies signed with `SESSION_SECRET`
    user id; `getCurrentUser()` resolves it against the DB. Required to save a
    ranking and to browse the histórico.
 
-`middleware.ts` enforces: `/vote`, `/consenso`, `/historico`, `/equipos` and
-`/perfil` need a user (or admin) session; `/` redirects to `/vote` when already logged in;
+`middleware.ts` enforces: `/vote`, `/consenso`, `/historico`, `/equipos`,
+`/usuarios` and `/perfil` need a user (or admin) session; `/` redirects to
+`/vote` when already logged in;
 everything under `/admin` and `/api/admin` requires the admin session, except
 the `/admin` page itself (it renders the login form) and `/api/admin/login`.
 Route handlers re-check the session as defense in depth. Cookie names live in
@@ -285,7 +348,11 @@ Login answers with the same message for unknown email and wrong password.
 - **Share images** (`api/**/image/route.tsx`) use `next/og` + Satori. Satori
   can't load WOFF2; fonts are fetched as TTF. Image URLs are cache-busted by
   `updated_at`.
-- **Tests** live next to the code as `*.test.ts` and run under Vitest.
+- **Tests** live next to the code as `*.test.ts` and run under Vitest. Today
+  there are 7 files / 46 tests: `ranking-algorithm`, `ranking-deviation`,
+  `ranking-evolution`, `slug`, `video/animation`, `data/power-metric` and
+  `db/client` (only the pure `isUndefinedColumnError` helper — nothing in the
+  suite touches Postgres, so `npm test` runs with no `.env.local`).
 
 ## Database migrations
 
@@ -303,11 +370,53 @@ change it in `/admin/ajustes`), migrates pre-existing rows from the old
 `voting_type` enum to the UUID FK, drops the now unused `position` /
 `admin_password_hash` columns, and deletes leftover votings — silently when
 they have no rankings, otherwise only with
-`npm run db:migrate -- --purge-extra-votings`. There is no migration framework;
+`npm run db:migrate -- --purge-extra-votings`.
+
+`runMigrations()` takes `{ purgeExtraVotings?, log? }` and **returns the log
+lines** as `string[]`: the CLI prints them, and `/api/admin/migrate`
+(`maxDuration = 60`, admin session required) sends them back so
+`RunMigrationsPanel` can show them in `/admin/ajustes`. On failure the route
+answers `500` with the Postgres `code` and `message`, which is what makes a
+"Database error" diagnosable from the browser. There is no migration framework;
 extend `runMigrations()` with `CREATE TABLE IF NOT EXISTS` / guarded `ALTER`s
 and keep it re-runnable. Guarded `ALTER`s go in the `ensure*` helpers, which
 run on **every** migration — never behind a "the table did not exist" branch,
 or existing databases never get the new columns.
+
+## Project state
+
+The app is feature-complete for the 2026 season and deployed on Vercel; work
+since the fork has been small, single-purpose PRs. Reading them in order is the
+fastest way to see how the current shape was reached:
+
+| PR | What it landed |
+| --- | --- |
+| — | `5c43788` fork of QBRankings: the ranked entity becomes a team |
+| #1 | one single voting (NFL Alicante), password-gated access, no voting selector |
+| #2 | user accounts, screenshots and week-to-week evolution (the current core) |
+| #3 | the board starts with all 32 teams; the "available teams" column is gone |
+| #4 | `/consenso`: live consensus compared with your own ranking |
+| #5 | wording of the `/vote/success` button |
+| #6, #7 | mean deviation computed **leave-one-out**, and limited to that metric — the rest of `/consenso` (diffs, "Clavados", over/underrated) compares against the consensus actually shown, your vote included |
+| #8, #9 | `/usuarios`: browse anyone's ranking, compared with **yours** (not with the consensus) |
+| #10 | the 10 s evolution video (`lib/video/`, `previous_positions`) |
+| #11 | the "Database error" on save: `ensure*` helpers now run on every migration, plus the `42703` fallback and the migrations button in `/admin/ajustes` |
+
+Known rough edges, in case a change lands near them:
+
+- **`data/power-metric.ts` holds invented numbers.** The admin comparison works,
+  the data does not mean anything yet.
+- **No email delivery.** Password recovery is an admin typing a temporary one in
+  `/admin/usuarios`; registration is gated by the community password instead of
+  by verification.
+- **The `votings` table is a single-row leftover** of the multi-voting era. Don't
+  build features that assume more rows; `getVoting()` is the only entry point.
+- **`public/vikings.png` is unused**, left over from the fork.
+- **The video only records with the tab visible** (real 10 s of `MediaRecorder`);
+  there is no server-side fallback.
+- **A migration that adds a column has to be deployed *and* run.** `npm test`
+  never touches the DB, so nothing in CI catches a query against a column that
+  production does not have yet.
 
 ## Git workflow
 
