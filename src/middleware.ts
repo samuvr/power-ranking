@@ -8,6 +8,7 @@ export const config = {
     "/",
     "/vote/:path*",
     "/consenso",
+    "/realidad",
     "/historico/:path*",
     "/equipos/:path*",
     "/usuarios/:path*",
@@ -58,6 +59,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith("/vote") ||
     pathname === "/consenso" ||
+    pathname === "/realidad" ||
     pathname.startsWith("/historico") ||
     pathname.startsWith("/equipos") ||
     pathname.startsWith("/usuarios") ||
