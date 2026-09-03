@@ -48,6 +48,8 @@ English.
 - **`zod` v4** for all input validation
 - **Vitest 4** for unit tests (`@vitest/coverage-v8` is installed, but there is
   no `coverage` script — run `npx vitest run --coverage`)
+- **PGlite** (`@electric-sql/pglite`, dev only) — Postgres compiled to WASM, so
+  the migration tests run real SQL in-process with no server
 - Path alias: `@/*` → `./src/*`
 - `next.config.ts` only whitelists remote images: `a.espncdn.com`
   (`/i/teamlogos/nfl/500/**`, team logos) and `pbs.twimg.com`
@@ -68,6 +70,12 @@ npx vitest run src/lib/ranking-algorithm.test.ts   # a single test file
 
 Before committing, run `npm run lint` and `npm test`. There is no separate
 typecheck script; `npm run build` performs type checking.
+
+`.github/workflows/ci.yml` runs exactly those three (lint → test → build) on
+every pull request and on every push to `main`, on Node 22. The build needs no
+database — every page is `force-dynamic` — but it does need a `SESSION_SECRET`
+of at least 16 chars, so the workflow sets placeholder values for it,
+`ADMIN_PASSWORD` and `NEXT_PUBLIC_APP_URL`.
 
 ## Environment
 
@@ -130,10 +138,16 @@ src/
   lib/
     db/client.ts               # all SQL queries + row types (+ .test.ts)
     db/migrations.ts           # schema creation + legacy migration + seeding
+                               # (+ migrations.test.ts, contra PGlite)
     db/migrate.ts              # CLI entry point (npm run db:migrate)
+    db/test-db.ts              # adaptador PGlite que suplanta @vercel/postgres
+                               # en los tests (solo tests, nadie lo importa
+                               # desde src/app)
     auth.ts                    # admin JWT cookie + ADMIN_PASSWORD check
     user-auth.ts               # user JWT cookie + getCurrentUser()
     voting-access.ts           # bcrypt hash/verify helpers
+    rate-limit.ts              # cupo de intentos fallidos (+ .test.ts)
+    auth-throttle.ts           # los cupos concretos de login/registro + el 429
     cookie-names.ts            # cookie names (no deps: imported by middleware)
     og/                        # fonts.ts (Google Fonts TTF + absolute URLs),
                                # theme.ts (palette + 1080×1920) y
@@ -327,6 +341,19 @@ the DB client.
 
 Login answers with the same message for unknown email and wrong password.
 
+`/api/auth/login`, `/api/auth/register` and `/api/admin/login` are throttled by
+`lib/rate-limit.ts`, with the quotas in `lib/auth-throttle.ts`. **Only failed
+attempts count**, and a success clears the key, so a normal user never hits the
+limit; over quota the route answers `429` with `Retry-After` and a Spanish
+message the existing forms already surface. Login is limited per email
+(8 / 15 min) and per IP (25 / 15 min — deliberately loose, the community shares
+wifi); registration per IP (10 / 15 min, since every wrong community password
+burns a bcrypt); admin login per IP (8 / 15 min). The counters live **in the
+process**, so on Vercel each instance has its own: enough to stop brute force
+from one origin and to cap CPU spent on bcrypt, not a distributed limiter. A
+Postgres-backed one would add a write per attempt and a migration that login
+would then depend on.
+
 ## Conventions to follow
 
 - **Server Components by default.** Pages are `async` server components that
@@ -349,10 +376,19 @@ Login answers with the same message for unknown email and wrong password.
   can't load WOFF2; fonts are fetched as TTF. Image URLs are cache-busted by
   `updated_at`.
 - **Tests** live next to the code as `*.test.ts` and run under Vitest. Today
-  there are 7 files / 46 tests: `ranking-algorithm`, `ranking-deviation`,
-  `ranking-evolution`, `slug`, `video/animation`, `data/power-metric` and
-  `db/client` (only the pure `isUndefinedColumnError` helper — nothing in the
-  suite touches Postgres, so `npm test` runs with no `.env.local`).
+  there are 9 files / 72 tests: `ranking-algorithm`, `ranking-deviation`,
+  `ranking-evolution`, `slug`, `video/animation`, `data/power-metric`,
+  `rate-limit`, `db/client` (only the pure `isUndefinedColumnError` helper) and
+  `db/migrations`.
+- **`db/migrations.test.ts` is the one test that runs SQL.** It does
+  `vi.mock("@vercel/postgres", () => import("./test-db"))`, which swaps the
+  driver for a PGlite-backed shim — real Postgres in WASM, in-process. So it
+  still needs no `.env.local`, no server and no `POSTGRES_URL`, and it covers
+  what unit tests cannot: that `runMigrations()` is idempotent, that it upgrades
+  an already-created database (the PR #11 bug), that the legacy `voting_type`
+  enum migration still works, and that **every query in `db/client.ts` matches
+  the schema the migration leaves**. Add a column and a query that uses it →
+  add it to that smoke test.
 
 ## Database migrations
 
@@ -414,9 +450,11 @@ Known rough edges, in case a change lands near them:
 - **`public/vikings.png` is unused**, left over from the fork.
 - **The video only records with the tab visible** (real 10 s of `MediaRecorder`);
   there is no server-side fallback.
-- **A migration that adds a column has to be deployed *and* run.** `npm test`
-  never touches the DB, so nothing in CI catches a query against a column that
-  production does not have yet.
+- **A migration that adds a column still has to be deployed *and* run.**
+  `db/migrations.test.ts` now catches the schema/query mismatch before it ships
+  (it runs the real migration against PGlite and then every `db/client.ts`
+  query), but nothing checks that somebody actually pressed the button in
+  `/admin/ajustes` on production.
 
 ## Git workflow
 

@@ -38,7 +38,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // Sin `maximumScale`: la app es toda listas densas en móvil y bloquear el
+  // zoom deja fuera a quien lo necesita para leerlas (WCAG 1.4.4).
   themeColor: "#F4EEDC",
 };
 

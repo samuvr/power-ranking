@@ -35,16 +35,20 @@ después de conectar la base de datos al proyecto.
 
 ```
 npm run dev          # arranca en http://localhost:3000
-npm run build        # build de producción
+npm run build        # build de producción (y el único typecheck del repo)
 npm run db:migrate   # crea las tablas votings + rankings (idempotente)
                      # -- --purge-extra-votings borra votaciones antiguas
                      #    sobrantes junto con sus rankings
                      # también desde /admin/ajustes → "Ejecutar migraciones",
                      #    útil si POSTGRES_URL es sensitive y no se puede
                      #    descargar con vercel env pull
-npm test             # tests del algoritmo (vitest)
+npm test             # tests: algoritmo, evolución, vídeo, rate limit y
+                     #    migraciones (estas contra PGlite, sin base de datos)
 npm run lint         # eslint
 ```
+
+Cada pull request y cada push a `main` pasan por `.github/workflows/ci.yml`,
+que ejecuta lint, tests y build en Node 22.
 
 ## Flujo
 
