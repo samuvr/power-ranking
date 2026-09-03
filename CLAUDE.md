@@ -118,7 +118,8 @@ src/
   data/                        # teams.ts, power-metric.ts (+ power-metric.test.ts)
   lib/
     db/client.ts               # all SQL queries + row types
-    db/migrate.ts              # schema creation + legacy migration + seeding
+    db/migrations.ts           # schema creation + legacy migration + seeding
+    db/migrate.ts              # CLI entry point (npm run db:migrate)
     auth.ts                    # admin JWT cookie + ADMIN_PASSWORD check
     user-auth.ts               # user JWT cookie + getCurrentUser()
     voting-access.ts           # bcrypt hash/verify helpers
@@ -145,7 +146,7 @@ URL — it identifies the row and names exported PNGs), display fields (`name`,
 a bcrypt `voter_password_hash`, a `public_access` flag (skip the password) and
 an `active` flag (closes voting). `getVoting()` resolves it — canonical slug
 first, oldest row as fallback — and `toPublicVoting()` strips the hash
-(`VotingPublic`). Nothing in the app creates or deletes votings; `migrate.ts`
+(`VotingPublic`). Nothing in the app creates or deletes votings; `migrations.ts`
 seeds the row and removes leftovers.
 
 ### Users (`users` table)
@@ -288,8 +289,12 @@ Login answers with the same message for unknown email and wrong password.
 
 ## Database migrations
 
-`src/lib/db/migrate.ts` is the single, **idempotent** migration entry point
-(`npm run db:migrate`). It creates the `votings`, `rankings`, `users`,
+`src/lib/db/migrations.ts` holds the single, **idempotent** migration
+(`runMigrations()`), run either from the CLI (`npm run db:migrate`, a thin
+wrapper in `migrate.ts`) or from the deployed app via `POST /api/admin/migrate`
+— the button in `/admin/ajustes`. The route exists because Vercel's *sensitive*
+env vars can't be pulled locally, so `vercel env pull` may leave `POSTGRES_URL`
+empty. It creates the `votings`, `rankings`, `users`,
 `snapshots` and `snapshot_entries` tables, adds `rankings.user_id` (linking any
 pre-existing ranking to an account with the same email), adds
 `rankings.previous_positions` / `previous_saved_at`, seeds
@@ -299,8 +304,10 @@ change it in `/admin/ajustes`), migrates pre-existing rows from the old
 `admin_password_hash` columns, and deletes leftover votings — silently when
 they have no rankings, otherwise only with
 `npm run db:migrate -- --purge-extra-votings`. There is no migration framework;
-extend this script with `CREATE TABLE IF NOT EXISTS` / guarded `ALTER`s and
-keep it re-runnable.
+extend `runMigrations()` with `CREATE TABLE IF NOT EXISTS` / guarded `ALTER`s
+and keep it re-runnable. Guarded `ALTER`s go in the `ensure*` helpers, which
+run on **every** migration — never behind a "the table did not exist" branch,
+or existing databases never get the new columns.
 
 ## Git workflow
 

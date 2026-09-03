@@ -39,6 +39,9 @@ npm run build        # build de producción
 npm run db:migrate   # crea las tablas votings + rankings (idempotente)
                      # -- --purge-extra-votings borra votaciones antiguas
                      #    sobrantes junto con sus rankings
+                     # también desde /admin/ajustes → "Ejecutar migraciones",
+                     #    útil si POSTGRES_URL es sensitive y no se puede
+                     #    descargar con vercel env pull
 npm test             # tests del algoritmo (vitest)
 npm run lint         # eslint
 ```

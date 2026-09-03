@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getVotingPublic } from "@/lib/db/client";
 import { VotingSettingsForm } from "@/components/VotingSettingsForm";
+import { RunMigrationsPanel } from "@/components/RunMigrationsPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default async function VotingSettingsPage() {
         </p>
       </header>
       <VotingSettingsForm voting={voting} />
+      <RunMigrationsPanel />
     </main>
   );
 }
