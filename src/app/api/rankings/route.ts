@@ -53,7 +53,18 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ id });
   } catch (err) {
-    console.error("Failed to upsert ranking", err);
-    return NextResponse.json({ error: "Database error" }, { status: 500 });
+    // El código y el detalle de Postgres son lo único que permite distinguir
+    // una caída de la base de datos de un esquema sin migrar.
+    const pg = err as { code?: string; detail?: string; message?: string };
+    console.error("Failed to upsert ranking", {
+      code: pg?.code,
+      detail: pg?.detail,
+      message: pg?.message,
+      email: user.email,
+    });
+    return NextResponse.json(
+      { error: "No se ha podido guardar tu ranking. Inténtalo de nuevo en unos segundos." },
+      { status: 500 },
+    );
   }
 }

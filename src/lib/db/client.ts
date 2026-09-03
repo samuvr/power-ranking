@@ -137,6 +137,26 @@ export async function updateVoting(id: string, patch: VotingUpdate): Promise<voi
   `;
 }
 
+/**
+ * Postgres 42703 (`undefined_column`): la consulta usa una columna que la base
+ * de datos todavía no tiene porque falta correr `npm run db:migrate`.
+ */
+export function isUndefinedColumnError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "42703"
+  );
+}
+
+function warnMissingPreviousColumns() {
+  console.warn(
+    "rankings.previous_positions / previous_saved_at no existen: " +
+      "ejecuta `npm run db:migrate` para habilitar el vídeo de evolución.",
+  );
+}
+
 export async function upsertRanking(input: {
   fullName: string;
   email: string;
@@ -148,26 +168,45 @@ export async function upsertRanking(input: {
   // Al reordenar se guarda la versión anterior en `previous_positions`: es el
   // punto de partida del vídeo de evolución. Reenviar el mismo orden no la
   // pisa, para no dejar un vídeo en el que no se mueve nadie.
-  const result = await sql<{ id: string }>`
-    INSERT INTO rankings (full_name, email, user_id, voting, positions)
-    VALUES (${input.fullName}, ${input.email}, ${input.userId}, ${input.voting}, ${positionsJson}::jsonb)
-    ON CONFLICT (email, voting)
-    DO UPDATE SET
-      full_name = EXCLUDED.full_name,
-      user_id = COALESCE(EXCLUDED.user_id, rankings.user_id),
-      previous_positions = CASE
-        WHEN rankings.positions IS DISTINCT FROM EXCLUDED.positions THEN rankings.positions
-        ELSE rankings.previous_positions
-      END,
-      previous_saved_at = CASE
-        WHEN rankings.positions IS DISTINCT FROM EXCLUDED.positions THEN rankings.updated_at
-        ELSE rankings.previous_saved_at
-      END,
-      positions = EXCLUDED.positions,
-      updated_at = now()
-    RETURNING id
-  `;
-  return { id: result.rows[0].id };
+  try {
+    const result = await sql<{ id: string }>`
+      INSERT INTO rankings (full_name, email, user_id, voting, positions)
+      VALUES (${input.fullName}, ${input.email}, ${input.userId}, ${input.voting}, ${positionsJson}::jsonb)
+      ON CONFLICT (email, voting)
+      DO UPDATE SET
+        full_name = EXCLUDED.full_name,
+        user_id = COALESCE(EXCLUDED.user_id, rankings.user_id),
+        previous_positions = CASE
+          WHEN rankings.positions IS DISTINCT FROM EXCLUDED.positions THEN rankings.positions
+          ELSE rankings.previous_positions
+        END,
+        previous_saved_at = CASE
+          WHEN rankings.positions IS DISTINCT FROM EXCLUDED.positions THEN rankings.updated_at
+          ELSE rankings.previous_saved_at
+        END,
+        positions = EXCLUDED.positions,
+        updated_at = now()
+      RETURNING id
+    `;
+    return { id: result.rows[0].id };
+  } catch (err) {
+    if (!isUndefinedColumnError(err)) throw err;
+    // Base de datos sin migrar: guardar el ranking es más importante que
+    // conservar la versión anterior para el vídeo.
+    warnMissingPreviousColumns();
+    const result = await sql<{ id: string }>`
+      INSERT INTO rankings (full_name, email, user_id, voting, positions)
+      VALUES (${input.fullName}, ${input.email}, ${input.userId}, ${input.voting}, ${positionsJson}::jsonb)
+      ON CONFLICT (email, voting)
+      DO UPDATE SET
+        full_name = EXCLUDED.full_name,
+        user_id = COALESCE(EXCLUDED.user_id, rankings.user_id),
+        positions = EXCLUDED.positions,
+        updated_at = now()
+      RETURNING id
+    `;
+    return { id: result.rows[0].id };
+  }
 }
 
 export async function getRankingById(id: string): Promise<RankingRow | null> {
@@ -183,14 +222,25 @@ export async function getRankingById(id: string): Promise<RankingRow | null> {
 export async function getRankingWithPreviousById(
   id: string,
 ): Promise<RankingWithPreviousRow | null> {
-  const result = await sql<RankingWithPreviousRow>`
-    SELECT id, full_name, email, user_id, voting, positions,
-           previous_positions, previous_saved_at, created_at, updated_at
-    FROM rankings
-    WHERE id = ${id}
-    LIMIT 1
-  `;
-  return result.rows[0] ?? null;
+  try {
+    const result = await sql<RankingWithPreviousRow>`
+      SELECT id, full_name, email, user_id, voting, positions,
+             previous_positions, previous_saved_at, created_at, updated_at
+      FROM rankings
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+    return result.rows[0] ?? null;
+  } catch (err) {
+    if (!isUndefinedColumnError(err)) throw err;
+    // Base de datos sin migrar: sin versión anterior no hay vídeo, pero la
+    // página de confirmación se sigue viendo.
+    warnMissingPreviousColumns();
+    const ranking = await getRankingById(id);
+    return ranking
+      ? { ...ranking, previous_positions: null, previous_saved_at: null }
+      : null;
+  }
 }
 
 export async function getRankingsByVoting(voting: VotingId): Promise<RankingRow[]> {
