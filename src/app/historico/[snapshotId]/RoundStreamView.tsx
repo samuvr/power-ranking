@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { IMAGE_REVISION } from "@/lib/og/image-version";
 
 export type RoundSummary = {
   /** Puestos que cierra la fase, [peor, mejor]. */
@@ -32,7 +33,11 @@ export function RoundStreamView({ snapshotId, rounds, fileBase, mismatch }: Prop
   const total = rounds.length;
   const current = rounds[round];
   const [low, high] = current.positionsAssigned;
-  const imageUrl = `/api/snapshots/${snapshotId}/rounds/${round}/image`;
+  // La revisión va en la URL: sin ella, quien ya abrió una fase seguiría
+  // viendo la imagen cacheada de un dibujo anterior.
+  const urlFor = (i: number) =>
+    `/api/snapshots/${snapshotId}/rounds/${i}/image?v=${IMAGE_REVISION}`;
+  const imageUrl = urlFor(round);
 
   function goTo(next: number) {
     if (next === round) return;
@@ -46,7 +51,7 @@ export function RoundStreamView({ snapshotId, rounds, fileBase, mismatch }: Prop
     setError(null);
     try {
       for (let i = 0; i < total; i++) {
-        const res = await fetch(`/api/snapshots/${snapshotId}/rounds/${i}/image`);
+        const res = await fetch(urlFor(i));
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
         const a = document.createElement("a");

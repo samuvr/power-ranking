@@ -17,6 +17,7 @@ import {
 } from "@/lib/ranking-deviation";
 import { computeEvolution } from "@/lib/ranking-evolution";
 import { RankingComparison } from "@/components/RankingComparison";
+import { IMAGE_REVISION } from "@/lib/og/image-version";
 
 export const dynamic = "force-dynamic";
 
@@ -106,7 +107,7 @@ export default async function UsuarioPage({
     subtitle = `${snapshot.name} · congelado el ${dateFmt.format(
       new Date(snapshot.created_at),
     )}`;
-    imageUrl = `/api/snapshots/${snapshot.id}/entries/${entry.id}/image`;
+    imageUrl = `/api/snapshots/${snapshot.id}/entries/${entry.id}/image?v=${IMAGE_REVISION}`;
 
     if (isSelf) {
       note = `Este es tu propio ranking en ${snapshot.name}.`;
