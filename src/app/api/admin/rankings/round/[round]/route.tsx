@@ -32,10 +32,8 @@ export async function GET(req: Request, { params }: { params: Params }) {
 
   const breakdown = result.rounds[roundIndex];
 
-  // Equipos de esta fase, ordenados de peor (mayor posición) a mejor
-  const entries = result.ranking
-    .filter((e) => e.roundIndex === roundIndex)
-    .sort((a, b) => b.finalPosition - a.finalPosition);
+  // Equipos que cierran su puesto en esta fase; RoundImage los ordena.
+  const entries = result.ranking.filter((e) => e.roundIndex === roundIndex);
 
   const origin = getOrigin(req);
   const fonts = await loadAllFonts();
