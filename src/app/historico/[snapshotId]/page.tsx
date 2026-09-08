@@ -14,6 +14,7 @@ import { RankingVideoExport } from "@/components/RankingVideoExport";
 import { slugify } from "@/lib/slug";
 import { EvolutionBadge } from "@/components/EvolutionBadge";
 import { TeamMark } from "@/components/TeamMark";
+import { IMAGE_REVISION } from "@/lib/og/image-version";
 import { RoundStreamView } from "./RoundStreamView";
 
 export const dynamic = "force-dynamic";
@@ -85,7 +86,7 @@ export default async function SnapshotPage({ params }: { params: Params }) {
 
       <div className="mb-6 flex flex-wrap items-start gap-2">
         <a
-          href={`/api/snapshots/${snapshot.id}/image`}
+          href={`/api/snapshots/${snapshot.id}/image?v=${IMAGE_REVISION}`}
           target="_blank"
           rel="noopener noreferrer"
           className="font-subhead inline-block rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"

@@ -9,6 +9,7 @@ import {
 import { computeEvolution } from "@/lib/ranking-evolution";
 import { computeDeviationVsPositions } from "@/lib/ranking-deviation";
 import { RankingListView } from "@/components/RankingListView";
+import { IMAGE_REVISION } from "@/lib/og/image-version";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export default async function SnapshotEntryPage({ params }: { params: Params }) 
       </header>
 
       <a
-        href={`/api/snapshots/${snapshot.id}/entries/${entry.id}/image`}
+        href={`/api/snapshots/${snapshot.id}/entries/${entry.id}/image?v=${IMAGE_REVISION}`}
         target="_blank"
         rel="noopener noreferrer"
         className="font-subhead mb-6 inline-block rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"

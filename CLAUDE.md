@@ -434,7 +434,10 @@ would then depend on.
   `ranking-deviation.ts`; feed them plain arrays.
 - **Share images** (`api/**/image/route.tsx`) use `next/og` + Satori. Satori
   can't load WOFF2; fonts are fetched as TTF. Image URLs are cache-busted by
-  `updated_at`.
+  `updated_at`. A screenshot's images never change, so they carry
+  `?v=IMAGE_REVISION` (`lib/og/image-version.ts`) instead: **bump that number
+  when you change how the images are drawn**, or browsers keep serving the old
+  PNG for an hour.
 - **Tests** live next to the code as `*.test.ts` and run under Vitest. Today
   there are 12 files / 119 tests: `ranking-algorithm`, `ranking-deviation`,
   `ranking-evolution`, `ranking-dispersion`, `ranking-season`, `nfl-results`,
