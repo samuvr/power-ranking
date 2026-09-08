@@ -8,11 +8,13 @@ import {
 } from "@/lib/db/client";
 import { findTeamByAbbr } from "@/data/teams";
 import { computeEvolution, topMovers } from "@/lib/ranking-evolution";
+import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import { RankingListView } from "@/components/RankingListView";
 import { RankingVideoExport } from "@/components/RankingVideoExport";
 import { slugify } from "@/lib/slug";
 import { EvolutionBadge } from "@/components/EvolutionBadge";
 import { TeamMark } from "@/components/TeamMark";
+import { RoundStreamView } from "./RoundStreamView";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,20 @@ export default async function SnapshotPage({ params }: { params: Params }) {
   const deltaByTeam = new Map(evolutions.map((e) => [e.teamAbbr, e.delta]));
   const { risers, fallers } = topMovers(evolutions, 3);
 
+  // Las fases del algoritmo no se guardan: se recalculan con los rankings
+  // congelados del screenshot, que reproducen su consensus mientras el
+  // algoritmo no cambie. Si dejaran de coincidir, la vista lo avisa.
+  const stream =
+    entries.length > 0 ? computeGlobalRanking(entries.map((e) => e.positions)) : null;
+  const streamRounds =
+    stream?.rounds.map((r) => ({ positionsAssigned: r.positionsAssigned })) ?? [];
+  const streamMismatch =
+    stream !== null &&
+    stream.ranking
+      .slice()
+      .sort((a, b) => a.finalPosition - b.finalPosition)
+      .some((e, idx) => e.teamAbbr !== snapshot.consensus[idx]);
+
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-8">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
@@ -67,14 +83,24 @@ export default async function SnapshotPage({ params }: { params: Params }) {
         </Link>
       </header>
 
-      <a
-        href={`/api/snapshots/${snapshot.id}/image`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-subhead mb-6 inline-block rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
-      >
-        Ver imagen del consensus
-      </a>
+      <div className="mb-6 flex flex-wrap items-start gap-2">
+        <a
+          href={`/api/snapshots/${snapshot.id}/image`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-subhead inline-block rounded-xl border border-border bg-surface px-3 py-2 text-xs uppercase tracking-wide transition hover:border-foreground"
+        >
+          Ver imagen del consensus
+        </a>
+        {streamRounds.length > 0 && (
+          <RoundStreamView
+            snapshotId={snapshot.id}
+            rounds={streamRounds}
+            fileBase={`carrusel-${voting.slug}-${slugify(snapshot.name)}`}
+            mismatch={streamMismatch}
+          />
+        )}
+      </div>
 
       {previous && (
         <div id="video" className="mb-6 scroll-mt-6">
