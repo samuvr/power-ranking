@@ -10,6 +10,8 @@ export const RED = "#C8102E";
 
 export const IMAGE_WIDTH = 1080;
 export const IMAGE_HEIGHT = 1920;
+/** Lado de las imágenes cuadradas (carrusel de fases). */
+export const IMAGE_SQUARE = 1080;
 
 export const dateFormatter = new Intl.DateTimeFormat("es-ES", {
   day: "2-digit",

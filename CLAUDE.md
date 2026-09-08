@@ -124,7 +124,7 @@ src/
       auth/                    # register, login, logout, profile PATCH
       rankings/                # POST submit, GET .../[id]/image (og)
       team-logo/[abbr]/        # proxy del escudo ESPN (mismo origen, para el vídeo)
-      snapshots/[id]/          # frozen consensus + entry images
+      snapshots/[id]/          # frozen consensus, entry and phase images
       admin/                   # login, migrate, rankings (+story/round/
                                # movers images), screenshots CRUD, user
                                # password reset, voters image,
@@ -155,6 +155,7 @@ src/
     og/                        # fonts.ts (Google Fonts TTF + absolute URLs),
                                # theme.ts (palette + 1080×1920) y
                                # ranking-image.tsx (layout Satori compartido)
+                               # y round-image.tsx (fase del algoritmo, 1080×1080)
     schemas.ts                 # zod schemas for every input
     ranking-algorithm.ts       # consensus algorithm (+ .test.ts)
     ranking-deviation.ts       # voter vs consensus deviation (+ .test.ts)
@@ -192,7 +193,7 @@ Every page below is an `async` server component with
 | `/usuarios` | user | list of accounts with their last save and how many screenshots they appear in (`listUsers`) |
 | `/usuarios/[userId]?snapshot=<id>` | user | that user's ranking vs yours — live, or both frozen versions from that screenshot |
 | `/historico` | user | screenshot list, marking the ones you took part in |
-| `/historico/[snapshotId]` | user | frozen consensus + its share image + the evolution video (anchor `#video`) |
+| `/historico/[snapshotId]` | user | frozen consensus + its share image + the stream por fases (square images, same carousel the admin exports) + the evolution video (anchor `#video`) |
 | `/historico/[snapshotId]/[entryId]` | user | one participant's frozen ranking + its deviation from that screenshot's consensus |
 | `/historico/comparar?a=<id>&b=<id>` | user | any two screenshots side by side (defaults: the two most recent) |
 | `/equipos` | user | the 32 teams in live-consensus order with their arrows, plus the three most divisive and the three most agreed-on |
