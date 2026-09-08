@@ -16,7 +16,7 @@ type Props = {
   totalRounds: number;
   /** Puestos que se cierran en esta fase, [peor, mejor]. */
   positionsAssigned: [number, number];
-  /** Equipos de la fase, ya ordenados de peor a mejor puesto. */
+  /** Equipos de la fase, en cualquier orden: se pintan de mejor a peor puesto. */
   entries: RoundImageEntry[];
   accent: string;
   footerRight: string;
@@ -25,7 +25,8 @@ type Props = {
 
 /**
  * Layout cuadrado 1080×1080 de una fase del algoritmo: cabecera, los puestos
- * que se cierran, los equipos que caen en ellos y unos puntos de progreso.
+ * que se cierran, los equipos que caen en ellos (el mejor puesto arriba) y
+ * unos puntos de progreso.
  * Pensado para publicarse como carrusel. Lo comparten el ranking global en
  * vivo (admin) y el consensus congelado de un screenshot.
  */
@@ -42,6 +43,8 @@ export function RoundImage({
   fonts,
 }: Props) {
   const [low, high] = positionsAssigned;
+  // De mejor a peor puesto: el 28 arriba y el 32 abajo, como se leen las listas.
+  const ordered = [...entries].sort((a, b) => a.finalPosition - b.finalPosition);
 
   // Altura disponible para las cards tras header + bloque de fase + footer
   const PAD = 56;
@@ -53,7 +56,7 @@ export function RoundImage({
     IMAGE_SQUARE - PAD * 2 - HEADER_H - SEP_H - PHASE_H - SEP_H - FOOTER_H - 24;
   const cardGap = 12;
   const cardH = Math.floor(
-    (cardsArea - cardGap * (entries.length - 1)) / Math.max(entries.length, 1),
+    (cardsArea - cardGap * (ordered.length - 1)) / Math.max(ordered.length, 1),
   );
   const titleSize = title.length <= 16 ? 52 : title.length <= 24 ? 42 : 34;
 
@@ -168,7 +171,7 @@ export function RoundImage({
           gap: cardGap,
         }}
       >
-        {entries.map((entry) => {
+        {ordered.map((entry) => {
           const team = findTeamByAbbr(entry.teamAbbr);
           const logoUrl = team ? teamLogoUrl(team.abbr) : null;
           const teamColor = team?.primaryColor ?? "#222";
