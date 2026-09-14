@@ -17,11 +17,21 @@ type Voter = {
   fullName: string;
   email: string;
   updatedAt: string;
+  /** Si ha guardado su ranking después del último screenshot. */
+  updatedSinceLastSnapshot: boolean;
   meanDeviation: number;
   rankPosition: number;
 };
 
 export type SnapshotOption = { id: string; name: string };
+
+const savedAtFmt = new Intl.DateTimeFormat("es-ES", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 type Props = {
   voting: VotingPublic;
@@ -33,6 +43,8 @@ type Props = {
   deltas: Record<string, number | null>;
   snapshots: SnapshotOption[];
   baseSnapshot: SnapshotOption | null;
+  /** El screenshot más reciente, contra el que se cuentan las actualizaciones. */
+  lastSnapshot: { name: string; createdAt: string } | null;
 };
 
 export function AdminRankingView({
@@ -44,6 +56,7 @@ export function AdminRankingView({
   deltas,
   snapshots,
   baseSnapshot,
+  lastSnapshot,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,6 +66,9 @@ export function AdminRankingView({
   const [showMetric, setShowMetric] = useState(false);
 
   const totalRounds = result.rounds.length;
+  const updatedSinceLastSnapshot = voters.filter(
+    (v) => v.updatedSinceLastSnapshot,
+  ).length;
 
   const syncUrl = useCallback(
     (m: Mode, r: number) => {
@@ -198,6 +214,27 @@ export function AdminRankingView({
           <strong>sin su propio voto</strong> (leave-one-out), para que un voto
           extremo no se compare consigo mismo. Menor = más alineado con el resto.
         </p>
+        <p className="mb-3 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
+          {lastSnapshot ? (
+            <>
+              <strong className="text-foreground">
+                {updatedSinceLastSnapshot} de {voters.length}
+              </strong>{" "}
+              {updatedSinceLastSnapshot === 1
+                ? "usuario ha actualizado"
+                : "usuarios han actualizado"}{" "}
+              su ranking desde el último screenshot (
+              <strong className="text-foreground">{lastSnapshot.name}</strong>,{" "}
+              {savedAtFmt.format(new Date(lastSnapshot.createdAt))}).
+            </>
+          ) : (
+            <>
+              Todavía no hay screenshots, así que los{" "}
+              <strong className="text-foreground">{voters.length}</strong> rankings
+              cuentan como nuevos.
+            </>
+          )}
+        </p>
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
           {voters.map((v) => (
             <li
@@ -211,6 +248,10 @@ export function AdminRankingView({
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{v.fullName}</p>
                   <p className="truncate text-muted">{v.email}</p>
+                  <p className="truncate text-[11px] text-muted">
+                    Último ranking guardado:{" "}
+                    {savedAtFmt.format(new Date(v.updatedAt))}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

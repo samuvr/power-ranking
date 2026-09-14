@@ -59,6 +59,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     deltas[evolution.teamAbbr] = evolution.delta;
   }
 
+  // Para el resumen de actualizaciones: siempre el screenshot más reciente,
+  // independientemente del que se esté usando como base de la evolución.
+  const latestSnapshot = snapshots[0] ?? null;
+  const lastSnapshotAt = latestSnapshot
+    ? new Date(latestSnapshot.created_at).getTime()
+    : null;
+
   const initialMode = search.mode === "stream" ? "stream" : "list";
   const initialRound = Math.max(
     0,
@@ -117,12 +124,24 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           baseSnapshot={
             baseSnapshot ? { id: baseSnapshot.id, name: baseSnapshot.name } : null
           }
+          lastSnapshot={
+            latestSnapshot
+              ? {
+                  name: latestSnapshot.name,
+                  createdAt: new Date(latestSnapshot.created_at).toISOString(),
+                }
+              : null
+          }
           voters={rows
             .map((r) => ({
               id: r.id,
               fullName: r.full_name,
               email: r.email,
-              updatedAt: r.updated_at,
+              updatedAt: new Date(r.updated_at).toISOString(),
+              updatedSinceLastSnapshot:
+                lastSnapshotAt === null
+                  ? true
+                  : new Date(r.updated_at).getTime() > lastSnapshotAt,
               meanDeviation: computeDeviationLeaveOneOut(
                 r.positions,
                 rows.filter((o) => o.id !== r.id).map((o) => o.positions),
