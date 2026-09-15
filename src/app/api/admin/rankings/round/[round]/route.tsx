@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
-import { getRankingsByVoting, getVoting } from "@/lib/db/client";
+import { getLatestSnapshot, getRankingsByVoting, getVoting } from "@/lib/db/client";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
+import { rankingsUpdatedAfter, snapshotCutoff } from "@/lib/ranking-pool";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { absoluteLogoUrl, getOrigin, loadAllFonts, resolveFontNames } from "@/lib/og/fonts";
 import { RoundImage } from "@/lib/og/round-image";
@@ -20,10 +21,14 @@ export async function GET(req: Request, { params }: { params: Params }) {
   const voting = await getVoting();
   if (!voting) return new Response("Not found", { status: 404 });
 
-  const rows = await getRankingsByVoting(voting.id);
-  if (rows.length === 0) return new Response("No submissions", { status: 404 });
+  const [rows, latest] = await Promise.all([
+    getRankingsByVoting(voting.id),
+    getLatestSnapshot(voting.id),
+  ]);
+  const included = rankingsUpdatedAfter(rows, snapshotCutoff(latest));
+  if (included.length === 0) return new Response("No submissions", { status: 404 });
 
-  const result = computeGlobalRanking(rows.map((r) => r.positions));
+  const result = computeGlobalRanking(included.map((r) => r.positions));
 
   const roundIndex = parseInt(roundParam, 10);
   if (isNaN(roundIndex) || roundIndex < 0 || roundIndex >= result.rounds.length) {

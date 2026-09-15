@@ -10,6 +10,7 @@ import {
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import { computeDeviationLeaveOneOut } from "@/lib/ranking-deviation";
 import { computeEvolution } from "@/lib/ranking-evolution";
+import { rankingsUpdatedAfter, snapshotCutoff } from "@/lib/ranking-pool";
 import { getAllTeams } from "@/data/teams";
 import { LoginForm } from "./LoginForm";
 import { AdminRankingView } from "./AdminRankingView";
@@ -42,7 +43,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     getRankingsByVoting(voting.id),
     listSnapshots(voting.id),
   ]);
-  const result = computeGlobalRanking(rows.map((r) => r.positions));
+
+  // El consenso en vivo solo se calcula con los rankings guardados después del
+  // último screenshot: el resto ya está congelado allí y solo vuelve a contar
+  // si se marca "incluir los rankings no actualizados" al crear el siguiente.
+  const latestSnapshot = snapshots[0] ?? null;
+  const cutoff = snapshotCutoff(latestSnapshot);
+  const includedRows = rankingsUpdatedAfter(rows, cutoff);
+
+  const result = computeGlobalRanking(includedRows.map((r) => r.positions));
   const teamCount = getAllTeams().length;
 
   // Base de la evolución: el screenshot elegido o, por defecto, el último.
@@ -59,12 +68,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     deltas[evolution.teamAbbr] = evolution.delta;
   }
 
-  // Para el resumen de actualizaciones: siempre el screenshot más reciente,
-  // independientemente del que se esté usando como base de la evolución.
-  const latestSnapshot = snapshots[0] ?? null;
-  const lastSnapshotAt = latestSnapshot
-    ? new Date(latestSnapshot.created_at).getTime()
-    : null;
+  const includedIds = new Set(includedRows.map((r) => r.id));
 
   const initialMode = search.mode === "stream" ? "stream" : "list";
   const initialRound = Math.max(
@@ -84,7 +88,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           </p>
           <h1 className="font-display text-4xl uppercase leading-tight">{voting.name}</h1>
           <p className="mt-1 text-sm text-muted">
-            {result.totalSubmissions} envíos · {teamCount} equipos en 7 rondas
+            {result.totalSubmissions} de {rows.length} envíos · {teamCount} equipos en 7
+            rondas
           </p>
         </div>
         <nav className="flex flex-wrap gap-2">
@@ -109,7 +114,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         </nav>
       </header>
 
-      {result.totalSubmissions === 0 ? (
+      {rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">
           Todavía no hay envíos en la votación.
         </div>
@@ -120,6 +125,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           initialMode={initialMode}
           initialRound={initialRound}
           deltas={deltas}
+          excludedCount={rows.length - includedRows.length}
           snapshots={snapshots.map((s) => ({ id: s.id, name: s.name }))}
           baseSnapshot={
             baseSnapshot ? { id: baseSnapshot.id, name: baseSnapshot.name } : null
@@ -138,10 +144,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               fullName: r.full_name,
               email: r.email,
               updatedAt: new Date(r.updated_at).toISOString(),
-              updatedSinceLastSnapshot:
-                lastSnapshotAt === null
-                  ? true
-                  : new Date(r.updated_at).getTime() > lastSnapshotAt,
+              updatedSinceLastSnapshot: includedIds.has(r.id),
               meanDeviation: computeDeviationLeaveOneOut(
                 r.positions,
                 rows.filter((o) => o.id !== r.id).map((o) => o.positions),

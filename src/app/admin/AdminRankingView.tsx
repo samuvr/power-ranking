@@ -41,6 +41,8 @@ type Props = {
   voters: Voter[];
   /** Puestos ganados por equipo respecto al screenshot base. */
   deltas: Record<string, number | null>;
+  /** Rankings que se quedan fuera del consenso por no haberse actualizado. */
+  excludedCount: number;
   snapshots: SnapshotOption[];
   baseSnapshot: SnapshotOption | null;
   /** El screenshot más reciente, contra el que se cuentan las actualizaciones. */
@@ -54,6 +56,7 @@ export function AdminRankingView({
   initialRound,
   voters,
   deltas,
+  excludedCount,
   snapshots,
   baseSnapshot,
   lastSnapshot,
@@ -66,6 +69,8 @@ export function AdminRankingView({
   const [showMetric, setShowMetric] = useState(false);
 
   const totalRounds = result.rounds.length;
+  // Sin rankings actualizados desde el último screenshot no hay consenso nuevo.
+  const hasConsensus = result.totalSubmissions > 0;
   const updatedSinceLastSnapshot = voters.filter(
     (v) => v.updatedSinceLastSnapshot,
   ).length;
@@ -109,100 +114,117 @@ export function AdminRankingView({
 
   return (
     <div className="flex flex-col gap-6">
-      <div
-        role="tablist"
-        className="grid grid-cols-2 overflow-hidden rounded-xl border border-border bg-surface"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "list"}
-          onClick={() => setModeAndSync("list")}
-          className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
-            mode === "list" ? "bg-surface-2 text-foreground" : "text-muted"
-          }`}
-        >
-          Lista completa
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "stream"}
-          onClick={() => setModeAndSync("stream")}
-          className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
-            mode === "stream" ? "bg-surface-2 text-foreground" : "text-muted"
-          }`}
-        >
-          Stream por fases
-        </button>
-      </div>
-
-      <ExportActions
-        fileSlug={voting.slug}
-        totalRounds={totalRounds}
-        baseSnapshotId={baseSnapshot?.id ?? null}
+      <ConsensusPoolNote
+        included={result.totalSubmissions}
+        excluded={excludedCount}
+        lastSnapshot={lastSnapshot}
       />
 
-      {snapshots.length > 0 && (
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-muted">Comparar evolución con</span>
-          <select
-            value={baseSnapshot?.id ?? ""}
-            onChange={(e) => {
-              const params = new URLSearchParams(searchParams.toString());
-              if (e.target.value) params.set("base", e.target.value);
-              else params.delete("base");
-              const qs = params.toString();
-              router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-            }}
-            className="rounded-lg border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-foreground"
-          >
-            <option value="">Sin comparar</option>
-            {snapshots.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={showMetric}
-          onChange={(e) => setShowMetric(e.target.checked)}
-        />
-        <span>Comparar con diferencial de puntos</span>
-        <span
-          className="cursor-help text-muted"
-          tabIndex={0}
-          title="El diferencial de puntos (puntos anotados - puntos recibidos) es una estadística objetiva de rendimiento de equipo, independiente de la votación."
-          aria-label="El diferencial de puntos (puntos anotados - puntos recibidos) es una estadística objetiva de rendimiento de equipo, independiente de la votación."
-        >
-          ⓘ
-        </span>
-      </label>
-
-      {mode === "list" ? (
-        <RankingList
-          result={result}
-          showMetric={showMetric}
-          deltas={deltas}
-          since={baseSnapshot?.name ?? null}
-        />
+      {!hasConsensus ? (
+        <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">
+          Nadie ha actualizado su ranking desde{" "}
+          <strong className="text-foreground">{lastSnapshot?.name}</strong>, así que no hay
+          consenso nuevo que calcular. El de ese momento sigue congelado en su screenshot.
+        </div>
       ) : (
-        <RankingStream
-          result={result}
-          round={round}
+        <>
+        <div
+          role="tablist"
+          className="grid grid-cols-2 overflow-hidden rounded-xl border border-border bg-surface"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "list"}
+            onClick={() => setModeAndSync("list")}
+            className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+              mode === "list" ? "bg-surface-2 text-foreground" : "text-muted"
+            }`}
+          >
+            Lista completa
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "stream"}
+            onClick={() => setModeAndSync("stream")}
+            className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+              mode === "stream" ? "bg-surface-2 text-foreground" : "text-muted"
+            }`}
+          >
+            Stream por fases
+          </button>
+        </div>
+
+        <ExportActions
+          fileSlug={voting.slug}
           totalRounds={totalRounds}
-          accent={voting.accent}
-          showMetric={showMetric}
-          deltas={deltas}
-          since={baseSnapshot?.name ?? null}
-          onPrev={() => setRoundAndSync(Math.max(0, round - 1))}
-          onNext={() => setRoundAndSync(Math.min(totalRounds - 1, round + 1))}
+          baseSnapshotId={baseSnapshot?.id ?? null}
         />
+
+        {snapshots.length > 0 && (
+          <label className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted">Comparar evolución con</span>
+            <select
+              value={baseSnapshot?.id ?? ""}
+              onChange={(e) => {
+                const params = new URLSearchParams(searchParams.toString());
+                if (e.target.value) params.set("base", e.target.value);
+                else params.delete("base");
+                const qs = params.toString();
+                router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+              }}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-foreground"
+            >
+              <option value="">Sin comparar</option>
+              {snapshots.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={showMetric}
+            onChange={(e) => setShowMetric(e.target.checked)}
+          />
+          <span>Comparar con diferencial de puntos</span>
+          <span
+            className="cursor-help text-muted"
+            tabIndex={0}
+            title="El diferencial de puntos (puntos anotados - puntos recibidos) es una estadística objetiva de rendimiento de equipo, independiente de la votación."
+            aria-label="El diferencial de puntos (puntos anotados - puntos recibidos) es una estadística objetiva de rendimiento de equipo, independiente de la votación."
+          >
+            ⓘ
+          </span>
+        </label>
+
+        {mode === "list" ? (
+          <RankingList
+            result={result}
+            showMetric={showMetric}
+            deltas={deltas}
+            since={baseSnapshot?.name ?? null}
+          />
+        ) : (
+          <RankingStream
+            result={result}
+            round={round}
+            totalRounds={totalRounds}
+            accent={voting.accent}
+            showMetric={showMetric}
+            deltas={deltas}
+            since={baseSnapshot?.name ?? null}
+            onPrev={() => setRoundAndSync(Math.max(0, round - 1))}
+            onNext={() => setRoundAndSync(Math.min(totalRounds - 1, round + 1))}
+          />
+        )}
+
+        </>
       )}
 
       <section aria-label="Votantes">
@@ -281,6 +303,38 @@ export function AdminRankingView({
         </ul>
       </section>
     </div>
+  );
+}
+
+/** Con qué rankings se ha calculado el consenso que se está viendo. */
+function ConsensusPoolNote({
+  included,
+  excluded,
+  lastSnapshot,
+}: {
+  included: number;
+  excluded: number;
+  lastSnapshot: { name: string; createdAt: string } | null;
+}) {
+  // Sin screenshots todavía, todos los rankings cuentan: no hay nada que aclarar.
+  if (!lastSnapshot) return null;
+
+  return (
+    <p className="rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
+      El consenso se calcula <strong className="text-foreground">solo</strong> con los{" "}
+      <strong className="text-foreground">{included}</strong>{" "}
+      {included === 1 ? "ranking guardado" : "rankings guardados"} después de{" "}
+      <strong className="text-foreground">{lastSnapshot.name}</strong> (
+      {savedAtFmt.format(new Date(lastSnapshot.createdAt))}).
+      {excluded > 0 && (
+        <>
+          {" "}
+          Los otros <strong className="text-foreground">{excluded}</strong> se quedan fuera
+          y solo volverán a contar si marcas «Incluir también los rankings no
+          actualizados» al crear el siguiente screenshot.
+        </>
+      )}
+    </p>
   );
 }
 

@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/client";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
+import { rankingsUpdatedAfter, snapshotCutoff } from "@/lib/ranking-pool";
 
 export const runtime = "nodejs";
 
@@ -51,12 +52,11 @@ export async function POST(req: Request) {
     getLatestSnapshot(voting.id),
   ]);
 
-  // Por defecto solo entra quien haya guardado después del último screenshot.
-  const cutoff = latest ? new Date(latest.created_at).getTime() : null;
-  const eligible =
-    data.includeAll || cutoff === null
-      ? rows
-      : rows.filter((r) => new Date(r.updated_at).getTime() > cutoff);
+  // Por defecto solo entra quien haya guardado después del último screenshot;
+  // con `includeAll` entran también los rankings anteriores.
+  const eligible = data.includeAll
+    ? rows
+    : rankingsUpdatedAfter(rows, snapshotCutoff(latest));
 
   if (eligible.length === 0) {
     return NextResponse.json(
