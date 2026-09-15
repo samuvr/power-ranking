@@ -6,6 +6,7 @@ import {
   getVoting,
   listSnapshots,
 } from "@/lib/db/client";
+import { isUpdatedAfter, snapshotCutoff } from "@/lib/ranking-pool";
 import { ScreenshotsView } from "./ScreenshotsView";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export default async function AdminScreenshotsPage() {
     getLatestSnapshot(voting.id),
   ]);
 
-  const cutoff = latest ? new Date(latest.created_at).getTime() : null;
+  const cutoff = snapshotCutoff(latest);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-8">
@@ -56,8 +57,7 @@ export default async function AdminScreenshotsPage() {
           fullName: r.full_name,
           email: r.email,
           updatedAt: new Date(r.updated_at).toISOString(),
-          updatedSinceLast:
-            cutoff === null ? true : new Date(r.updated_at).getTime() > cutoff,
+          updatedSinceLast: isUpdatedAfter(r.updated_at, cutoff),
         }))}
       />
     </main>

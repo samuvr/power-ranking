@@ -9,6 +9,7 @@ import {
 import { findTeamByAbbr, teamLogoUrl } from "@/data/teams";
 import { computeGlobalRanking } from "@/lib/ranking-algorithm";
 import { computeEvolution, topMovers, type Evolution } from "@/lib/ranking-evolution";
+import { rankingsUpdatedAfter, snapshotCutoff } from "@/lib/ranking-pool";
 import { absoluteLogoUrl, getOrigin, loadAllFonts, resolveFontNames } from "@/lib/og/fonts";
 import type { FontNames } from "@/lib/og/fonts";
 import {
@@ -102,16 +103,20 @@ export async function GET(req: Request) {
   const voting = await getVoting();
   if (!voting) return new Response("Voting not found", { status: 404 });
 
-  const rows = await getRankingsByVoting(voting.id);
-  if (rows.length === 0) return new Response("No submissions", { status: 404 });
+  const [rows, latest] = await Promise.all([
+    getRankingsByVoting(voting.id),
+    getLatestSnapshot(voting.id),
+  ]);
+  const included = rankingsUpdatedAfter(rows, snapshotCutoff(latest));
+  if (included.length === 0) return new Response("No submissions", { status: 404 });
 
-  const { ranking } = computeGlobalRanking(rows.map((r) => r.positions));
+  const { ranking } = computeGlobalRanking(included.map((r) => r.positions));
   const positions = [...ranking]
     .sort((a, b) => a.finalPosition - b.finalPosition)
     .map((entry) => entry.teamAbbr);
 
   const baseId = new URL(req.url).searchParams.get("base");
-  const base = baseId ? await getSnapshotById(baseId) : await getLatestSnapshot(voting.id);
+  const base = baseId ? await getSnapshotById(baseId) : latest;
   const usableBase = base && base.voting === voting.id ? base : null;
   if (!usableBase) {
     return new Response("Sin screenshot con el que comparar", { status: 404 });

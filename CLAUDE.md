@@ -164,6 +164,9 @@ src/
                                # (+ .test.ts)
     ranking-season.ts          # "mi temporada": podio y cambios de opinión
                                # de un votante (+ .test.ts)
+    ranking-pool.ts            # qué rankings entran en el consenso en vivo:
+                               # solo los guardados tras el último screenshot
+                               # (+ .test.ts)
     nfl-results.ts             # parseo del CSV de nflverse + clasificación
                                # real (puro, + .test.ts)
     nfl-standings.ts           # descarga del CSV y caché de 1 h (el IO)
@@ -199,7 +202,7 @@ Every page below is an `async` server component with
 | `/equipos` | user | the 32 teams in live-consensus order with their arrows, plus the three most divisive and the three most agreed-on |
 | `/equipos/[abbr]` | user | that team's position screenshot by screenshot, closed with the live consensus, plus how far apart the voters are on it right now (best/worst/mean/σ + histogram) |
 | `/perfil` | user | participation (X/Y screenshots), mean deviation, deviation per screenshot, "mi temporada" (podium per screenshot + what you changed your mind about), name/password form |
-| `/admin` | admin | login form, or the global ranking dashboard |
+| `/admin` | admin | login form, or the global ranking dashboard (consensus computed **only** with the rankings saved after the latest screenshot) |
 | `/admin/screenshots` | admin | create / rename / delete screenshots + participation panel |
 | `/admin/usuarios` | admin | accounts + manual password reset |
 | `/admin/votantes/[voterId]` | admin | one voter's ranking vs the **leave-one-out** consensus |
@@ -210,7 +213,8 @@ The admin dashboard reads three params: `?mode=list|stream`, `?round=<n>`
 (which screenshot the evolution arrows compare against — the most recent one by
 default). It also has a client-side checkbox that overlays the
 `data/power-metric.ts` ranking, and buttons that download the Story, Movers and
-per-round PNGs from `/api/admin/rankings/*`.
+per-round PNGs from `/api/admin/rankings/*` (those three images are drawn from
+the same filtered pool, so the export matches what the panel shows).
 
 ## Core domain concepts
 
@@ -262,7 +266,12 @@ A screenshot freezes the voting under a name unique per voting ("Week 1").
 and **never recomputed**; `snapshot_entries` holds a copy of each included
 user's `positions`. By default only rankings saved after the previous
 screenshot are included — the admin form shows the live count and can include
-everyone with a checkbox (`includeAll` in `SnapshotCreateSchema`). The
+everyone with a checkbox (`includeAll` in `SnapshotCreateSchema`). That same
+rule governs the **live consensus in `/admin`** (`lib/ranking-pool.ts`): a
+ranking that has not been touched since the latest screenshot is already frozen
+there and stays out of the panel's consensus until someone ticks that checkbox.
+The public pages (`/consenso`, `/equipos`, `/realidad`) keep using **every**
+ranking. The
 participation panel below the form lists who is up to date and who is not.
 Deleting a screenshot cascades its entries and changes everyone's evolution
 arrows. Every screenshot in `/admin/screenshots` links to its detail page and
@@ -439,9 +448,10 @@ would then depend on.
   when you change how the images are drawn**, or browsers keep serving the old
   PNG for an hour.
 - **Tests** live next to the code as `*.test.ts` and run under Vitest. Today
-  there are 12 files / 119 tests: `ranking-algorithm`, `ranking-deviation`,
-  `ranking-evolution`, `ranking-dispersion`, `ranking-season`, `nfl-results`,
-  `slug`, `video/animation`, `data/power-metric`, `rate-limit`, `db/client`
+  there are 13 files / 128 tests: `ranking-algorithm`, `ranking-deviation`,
+  `ranking-evolution`, `ranking-dispersion`, `ranking-season`, `ranking-pool`,
+  `nfl-results`, `slug`, `video/animation`, `data/power-metric`, `rate-limit`,
+  `db/client`
   (only the pure `isUndefinedColumnError` helper) and `db/migrations`.
 - **`db/migrations.test.ts` is the one test that runs SQL.** It does
   `vi.mock("@vercel/postgres", () => import("./test-db"))`, which swaps the
